@@ -32,25 +32,33 @@
         </div>
         <div class="filters">
           <div class="segmented" role="group" aria-label="Kommentarart">
-            <button class="filter-tab active" data-filter="mine" data-i18n="mine">Meine</button>
-            <button class="filter-tab" data-filter="mentions" data-i18n="mentions">Erwähnungen</button>
-            <button class="filter-tab" data-filter="needsReply" data-i18n="needsReply">Antwort nötig</button>
+            <button class="filter-tab active" data-filter="all" data-i18n="all">Alle</button>
+            <button class="filter-tab" data-filter="mine" data-i18n="mine">Meine</button>
+            <button class="filter-tab" data-filter="watched" data-i18n="watched">Beobachtet</button>
+            <button class="filter-tab" data-filter="done" data-i18n="done">Erledigt</button>
           </div>
           <div class="filter-row">
             <select id="kindFilter" aria-label="Kommentarart">
               <option value="all" data-i18n="allTypes">Alle Typen</option>
               <option value="inline" data-i18n="inline">Inline</option>
-              <option value="footer" data-i18n="pageComment">Seitenkommentar</option>
+              <option value="footer" data-i18n="pageComment">Seite</option>
             </select>
             <input id="searchInput" type="search" placeholder="Suchen …" data-i18n-placeholder="search" />
           </div>
         </div>
+
         <div id="notice" class="notice hidden" role="status"></div>
         <div id="commentList" class="comment-list"><div class="empty">Bitte zuerst deine Confluence-Zugangsdaten hinterlegen.</div></div>
+        <p class="hint workflow-note" data-i18n="footerNote"></p>
+        <details id="loadHints" class="load-hints hidden">
+          <summary data-i18n="loadHints">Hinweise zur Übersicht</summary>
+          <p id="loadHintsText"></p>
+        </details>
         <div class="list-footer"><span id="resultCount"></span><span id="lastUpdated"></span></div>
       </section>
 
       <section id="pageSettings" class="page">
+        <div id="settingsNotice" class="notice hidden" role="status"></div>
         <div class="settings-layout">
           <form id="settingsForm" class="card form-grid settings-card">
             <h2 data-i18n="confluenceAccess">Zugang</h2>
