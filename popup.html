@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ConfluenceLog</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <img class="brand-mark" src="icons/icon128.png" alt="ConfluenceLog" />
+        <div><div class="brand-title">ConfluenceLog</div><div id="connectionState" class="brand-subtitle">Nicht verbunden</div></div>
+      </div>
+      <nav class="tabs" aria-label="Navigation">
+        <button class="tab active" data-page="comments" title="Kommentare" aria-label="Kommentare">☷</button>
+        <button class="tab" data-page="settings" title="Einstellungen" aria-label="Einstellungen"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#mi-settings" />
+        </svg></button>
+        <button class="tab" data-page="info" title="Info" aria-label="Info"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#mi-info" />
+        </svg></button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="pageComments" class="page active">
+        <div class="toolbar">
+          <div class="summary"><strong id="openCount">–</strong><span data-i18n="openComments">Offene Kommentare</span></div>
+          <button id="refreshButton" class="icon-button" type="button" title="Aktualisieren" aria-label="Aktualisieren">↻</button>
+        </div>
+        <div class="filters">
+          <div class="segmented" role="group" aria-label="Kommentarart">
+            <button class="filter-tab active" data-filter="mine" data-i18n="mine">Meine</button>
+            <button class="filter-tab" data-filter="mentions" data-i18n="mentions">Erwähnungen</button>
+            <button class="filter-tab" data-filter="needsReply" data-i18n="needsReply">Antwort nötig</button>
+          </div>
+          <div class="filter-row">
+            <select id="kindFilter" aria-label="Kommentarart">
+              <option value="all" data-i18n="allTypes">Alle Typen</option>
+              <option value="inline" data-i18n="inline">Inline</option>
+              <option value="footer" data-i18n="pageComment">Seitenkommentar</option>
+            </select>
+            <input id="searchInput" type="search" placeholder="Suchen …" data-i18n-placeholder="search" />
+          </div>
+        </div>
+        <div id="notice" class="notice hidden" role="status"></div>
+        <div id="commentList" class="comment-list"><div class="empty">Bitte zuerst deine Confluence-Zugangsdaten hinterlegen.</div></div>
+        <div class="list-footer"><span id="resultCount"></span><span id="lastUpdated"></span></div>
+      </section>
+
+      <section id="pageSettings" class="page">
+        <div class="settings-layout">
+          <form id="settingsForm" class="card form-grid settings-card">
+            <h2 data-i18n="confluenceAccess">Zugang</h2>
+            <label>
+              <span data-i18n="hostLabel">Atlassian-Unternehmen</span>
+              <span class="host-input"><span aria-hidden="true">https://</span><input id="host" type="text" placeholder="your-company" pattern="[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?" maxlength="63" autocomplete="organization" required /><span aria-hidden="true">.atlassian.net</span></span>
+            </label>
+            <label><span>Email</span><input id="email" type="email" autocomplete="username" required /></label>
+            <label><span>API-Token</span><input id="token" type="password" autocomplete="current-password" required /></label>
+            <div class="button-row"><button class="primary-button" type="submit" data-i18n="connect">Zugang speichern</button></div>
+          </form>
+          <section id="preferencesCard" class="card form-grid settings-card" aria-labelledby="preferencesTitle">
+            <h2 id="preferencesTitle" data-i18n="preferences">Darstellung und Sprache</h2>
+            <div class="two-cols">
+              <label><span data-i18n="theme">Theme</span><select id="themeMode"><option value="system" data-i18n="system">System</option><option value="dark" data-i18n="dark">Dunkel</option><option value="light" data-i18n="light">Hell</option></select></label>
+              <label><span data-i18n="language">Sprache</span><select id="languageMode"><option value="system" data-i18n="system">System</option><option value="de" data-i18n="german">Deutsch</option><option value="en" data-i18n="english">English</option></select></label>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="pageInfo" class="page">
+        <div class="info-container">
+          <div class="info-content">
+            <h1 class="info-title">ConfluenceLog</h1>
+            <p class="info-version">v0.1.7</p>
+            <p class="info-description" data-i18n="infoText">Persönliche Übersicht für Confluence.</p>
+            <div class="info-links">
+              <a href="https://github.com/zinoberous/confluencelog/issues" target="_blank" rel="noopener noreferrer" class="info-link" data-i18n="reportIssue">Ein Problem melden</a>
+            </div>
+          </div>
+          <footer class="info-footer">
+            <p class="footer-credit" data-i18n="createdBy">Erstellt von Alexander Karge</p>
+            <p class="footer-copyright">© 2026 <span data-i18n="allRightsReserved">Alle Rechte vorbehalten</span>.</p>
+          </footer>
+        </div>
+      </section>
+    </main>
+  </div>
+  <svg width="0" height="0" style="position:absolute;left:-9999px;overflow:hidden" aria-hidden="true" focusable="false">
+    <symbol id="mi-settings" viewBox="0 0 24 24">
+      <path d="m19.14 12.94.04-.94-.04-.94 2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.36 7.36 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.36 7.36 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.67 8.84a.5.5 0 0 0 .12.64l2.03 1.58-.04.94.04.94-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.38 1.05.7 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.24 1.13-.56 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64ZM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Z" />
+    </symbol>
+    <symbol id="mi-info" viewBox="0 0 24 24">
+      <path d="M11 17h2v-6h-2v6Zm1-8.75a1.25 1.25 0 1 0-1.25-1.25A1.25 1.25 0 0 0 12 8.25ZM12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8.01 8.01 0 0 1-8 8Z" />
+    </symbol>
+  </svg>
+  <script src="popup.js"></script>
+</body>
+</html>
