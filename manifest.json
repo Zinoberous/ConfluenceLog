@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ConfluenceLog",
   "description": "Personal overview for Confluence.",
-  "version": "0.1.7",
+  "version": "1.0.0",
   "action": {
     "default_title": "ConfluenceLog",
     "default_popup": "popup.html",
@@ -20,9 +20,13 @@
     "128": "icons/icon128.png"
   },
   "permissions": [
-    "storage"
+    "storage",
+    "alarms"
   ],
   "optional_host_permissions": [
     "https://*/*"
-  ]
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
 }

@@ -10,7 +10,8 @@
   <div class="app">
     <header class="topbar">
       <div class="brand">
-        <img class="brand-mark" src="icons/icon128.png" alt="ConfluenceLog" />
+        <img id="brandLogo" class="brand-mark" src="icons/icon128.png" alt="ConfluenceLog" />
+        <span id="brandEmoji" class="brand-emoji hidden" aria-hidden="true">😠</span>
         <div><div class="brand-title">ConfluenceLog</div><div id="connectionState" class="brand-subtitle">Nicht verbunden</div></div>
       </div>
       <nav class="tabs" aria-label="Navigation">
@@ -18,7 +19,7 @@
         <button class="tab" data-page="settings" title="Einstellungen" aria-label="Einstellungen"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">
           <use href="#mi-settings" />
         </svg></button>
-        <button class="tab" data-page="info" title="Info" aria-label="Info"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">
+        <button id="tabInfo" class="tab" data-page="info" title="Info" aria-label="Info"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">
           <use href="#mi-info" />
         </svg></button>
       </nav>
@@ -32,9 +33,8 @@
         </div>
         <div class="filters">
           <div class="segmented" role="group" aria-label="Kommentarart">
-            <button class="filter-tab active" data-filter="all" data-i18n="all">Alle</button>
-            <button class="filter-tab" data-filter="mine" data-i18n="mine">Meine</button>
-            <button class="filter-tab" data-filter="watched" data-i18n="watched">Beobachtet</button>
+            <button class="filter-tab active" data-filter="mine" data-i18n="mine">Meine</button>
+            <button class="filter-tab" data-filter="watched" data-i18n="watched">Beteiligt</button>
             <button class="filter-tab" data-filter="done" data-i18n="done">Erledigt</button>
           </div>
           <div class="filter-row">
@@ -49,7 +49,6 @@
 
         <div id="notice" class="notice hidden" role="status"></div>
         <div id="commentList" class="comment-list"><div class="empty">Bitte zuerst deine Confluence-Zugangsdaten hinterlegen.</div></div>
-        <p class="hint workflow-note" data-i18n="footerNote"></p>
         <details id="loadHints" class="load-hints hidden">
           <summary data-i18n="loadHints">Hinweise zur Übersicht</summary>
           <p id="loadHintsText"></p>
@@ -64,7 +63,7 @@
             <h2 data-i18n="confluenceAccess">Zugang</h2>
             <label>
               <span data-i18n="hostLabel">Atlassian-Unternehmen</span>
-              <span class="host-input"><span aria-hidden="true">https://</span><input id="host" type="text" placeholder="your-company" pattern="[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?" maxlength="63" autocomplete="organization" required /><span aria-hidden="true">.atlassian.net</span></span>
+              <span class="host-input"><span aria-hidden="true">https://</span><input id="host" type="text" placeholder="your-company" pattern="[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?" maxlength="63" autocomplete="organization" required /><span aria-hidden="true">.atlassian.net</span></span>
             </label>
             <label><span>Email</span><input id="email" type="email" autocomplete="username" required /></label>
             <label><span>API-Token</span><input id="token" type="password" autocomplete="current-password" required /></label>
@@ -84,7 +83,7 @@
         <div class="info-container">
           <div class="info-content">
             <h1 class="info-title">ConfluenceLog</h1>
-            <p class="info-version">v0.1.7</p>
+            <p class="info-version">v1.0.0</p>
             <p class="info-description" data-i18n="infoText">Persönliche Übersicht für Confluence.</p>
             <div class="info-links">
               <a href="https://github.com/zinoberous/confluencelog/issues" target="_blank" rel="noopener noreferrer" class="info-link" data-i18n="reportIssue">Ein Problem melden</a>
@@ -106,6 +105,7 @@
       <path d="M11 17h2v-6h-2v6Zm1-8.75a1.25 1.25 0 1 0-1.25-1.25A1.25 1.25 0 0 0 12 8.25ZM12 2a10 10 0 1 0 10 10A10.01 10.01 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8 8.01 8.01 0 0 1-8 8Z" />
     </symbol>
   </svg>
+  <script src="confluence.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
