@@ -10,11 +10,20 @@ function safeNextUrl(next) {
   return url.href;
 }
 async function api(pathOrUrl, options = {}) {
+  if (state.throttleUntil > Date.now()) throw state.throttleError;
   if (options.method && options.method !== "GET") throw new Error("readOnly");
   const url = pathOrUrl.startsWith("http") ? safeNextUrl(pathOrUrl) : `${state.settings.host}${pathOrUrl}`;
   const response = await fetch(url, { ...options, redirect: "error", signal: options.signal ?? AbortSignal.timeout(25000), headers: { Accept: "application/json", Authorization: authHeader(), ...(options.body ? { "Content-Type": "application/json" } : {}) } });
   if (!response.ok) {
     const error = new Error(`HTTP ${response.status} · ${options.method ?? "GET"} ${new URL(url).pathname}`); error.status = response.status; error.path = new URL(url).pathname;
+    const retryAfter = response.headers?.get?.("Retry-After");
+    if (retryAfter) {
+      const seconds = Number(retryAfter);
+      error.retryAfterMs = Math.max(0, Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now()) || 0;
+    }
+    if (response.status === 429 || response.status === 503) {
+      state.throttleError = error; state.throttleUntil = Date.now() + Math.max(30000, error.retryAfterMs ?? 0);
+    }
     try { error.detail = (await response.json()).message; } catch { /* ignore */ }
     throw error;
   }
@@ -86,7 +95,7 @@ function pageUrl(pageId, commentId) {
   const base = `${state.settings.host}/wiki/pages/viewpage.action?pageId=${encodeURIComponent(pageId)}`;
   return commentId ? `${base}&focusedCommentId=${encodeURIComponent(commentId)}` : base;
 }
-function dateValue(value) { const d = new Date(value ?? 0); return Number.isNaN(d.getTime()) ? "" : [new Intl.DateTimeFormat(lang(), { dateStyle: "medium" }).format(d), new Intl.DateTimeFormat(lang(), { timeStyle: "short" }).format(d)].join(" "); }
+function dateValue(value, withSeconds = false) { const d = new Date(value ?? 0); return Number.isNaN(d.getTime()) ? "" : [new Intl.DateTimeFormat(lang(), { dateStyle: "medium" }).format(d), new Intl.DateTimeFormat(lang(), { timeStyle: withSeconds ? "medium" : "short" }).format(d)].join(" "); }
 function isOpen(comment, kind) {
   const status = String(comment.resolutionStatus ?? comment.status ?? "").toLowerCase();
   return comment.resolved !== true && !["resolved", "closed", "done"].includes(status);
@@ -225,7 +234,7 @@ const commentSources = Object.fromEntries(["inline", "footer"].map(kind => [kind
     await parallelMap([...new Set(threads.flatMap(item => [...item.all.map(authorId), item.resolvedById]).filter(Boolean))], async id => {
       if (!state.users.has(id)) {
         try { state.users.set(id, await api(`/wiki/rest/api/user?accountId=${encodeURIComponent(id)}`)); }
-        catch { state.users.set(id, { displayName: id }); }
+        catch (error) { if ([429,503].includes(error.status)) throw error; state.users.set(id, { displayName: id }); }
       }
     });
     return threads.map(item => ({ ...item, pageTitle: state.pages.get(item.pageId)?.title ?? item.pageTitle }));

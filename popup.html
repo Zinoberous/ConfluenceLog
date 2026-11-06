@@ -29,13 +29,12 @@
       <section id="pageComments" class="page active">
         <div class="toolbar">
           <div class="summary"><strong id="openCount">–</strong><span data-i18n="openComments">Offene Kommentare</span></div>
-          <button id="refreshButton" class="icon-button" type="button" title="Aktualisieren" aria-label="Aktualisieren">↻</button>
         </div>
         <div class="filters">
           <div class="segmented" role="group" aria-label="Kommentarart">
-            <button class="filter-tab active" data-filter="mine" data-i18n="mine">Meine</button>
-            <button class="filter-tab" data-filter="watched" data-i18n="watched">Beteiligt</button>
-            <button class="filter-tab" data-filter="done" data-i18n="done">Erledigt</button>
+            <button class="filter-tab active" data-filter="mine" data-i18n="mine">Meine Kommentare (–)</button>
+            <button class="filter-tab" data-filter="watched" data-i18n="watched">Beteiligt (–)</button>
+            <button class="filter-tab" data-filter="done" data-i18n="done">Erledigt (–)</button>
           </div>
           <div class="filter-row">
             <select id="kindFilter" aria-label="Kommentarart">
@@ -49,11 +48,7 @@
 
         <div id="notice" class="notice hidden" role="status"></div>
         <div id="commentList" class="comment-list"><div class="empty">Bitte zuerst deine Confluence-Zugangsdaten hinterlegen.</div></div>
-        <details id="loadHints" class="load-hints hidden">
-          <summary data-i18n="loadHints">Hinweise zur Übersicht</summary>
-          <p id="loadHintsText"></p>
-        </details>
-        <div class="list-footer"><span id="resultCount"></span><span id="lastUpdated"></span></div>
+        <div class="list-footer"><span id="resultCount"></span><span class="updated-status"><span id="lastUpdated"></span><span id="syncIndicator" class="sync-indicator" aria-hidden="true">↻</span></span></div>
       </section>
 
       <section id="pageSettings" class="page">

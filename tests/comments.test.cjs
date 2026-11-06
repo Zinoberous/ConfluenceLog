@@ -184,7 +184,6 @@ for (const fails of [false, true]) {
     await loading;
     assert.equal(node('commentList').attributes['aria-busy'], 'false');
     assert.equal(node('commentList').children[0].className, 'empty');
-    assert.equal(node('refreshButton').disabled, false);
     assert.equal(a.run('state.activeTab'), 'mine');
     if (fails) assert.match(node('notice').textContent, /Test load failure/);
   });
@@ -403,4 +402,34 @@ test('search Easter egg is case-insensitive and does not issue Confluence reques
   assert.equal(a.calls.length,0);
   a.run(`state.query=''; render()`);
   assert.equal(node('commentList').children[0].className,'empty');
+});
+test('tab labels count matching entries independently of the active tab', () => {
+  const a=app(); popupDocument(a);
+  const tabs=['mine','watched','done'].map(filter=>({dataset:{filter}}));
+  a.set('tabs',tabs);
+  a.run(`document.querySelectorAll=selector=>selector==='.filter-tab'?tabs:[];
+    state.comments=[
+      ...buildThreads([{id:'1',pageTitle:'Match',version:{authorId:'me'},body:{}},{id:'2',pageTitle:'Match',version:{authorId:'other'},body:{}},{id:'3',parentCommentId:'2',version:{authorId:'me'},body:{}}],'inline'),
+      ...buildThreads([{id:'4',pageTitle:'Other',resolutionStatus:'resolved',version:{authorId:'me'},body:{}}],'footer')
+    ]; render();`);
+  assert.deepEqual(tabs.map(tab=>tab.textContent),['Meine Kommentare (1)','Beteiligt (1)','Erledigt (1)']);
+  a.run(`state.query='Match'; state.activeTab='watched'; render()`);
+  assert.deepEqual(tabs.map(tab=>tab.textContent),['Meine Kommentare (1)','Beteiligt (1)','Erledigt (0)']);
+  a.run(`state.query=''; state.kind='footer'; render()`);
+  assert.deepEqual(tabs.map(tab=>tab.textContent),['Meine Kommentare (0)','Beteiligt (0)','Erledigt (1)']);
+});
+
+test('sync status changes do not restart the continuous indicator animation', () => {
+  const a=app(); const node=popupDocument(a);
+  a.run('applySyncStatus({host:state.settings.host,email:state.settings.email,state:"idle"})');
+  let toggles=0;
+  node('syncIndicator').classList.toggle=()=>{toggles++;};
+  a.run('applySyncStatus({host:state.settings.host,email:state.settings.email,state:"syncing"})');
+  assert.equal(toggles,0);
+  a.run('applySyncStatus({host:state.settings.host,email:state.settings.email,state:"idle"})');
+  assert.equal(toggles,0);
+  const html=fs.readFileSync('popup.html','utf8');
+  assert.doesNotMatch(html,/id="refreshButton"/);
+  assert.match(fs.readFileSync('popup.css','utf8'),/\.sync-indicator\{animation:confluencelog-spin/);
+  assert.match(html,/id="lastUpdated"><\/span><span id="syncIndicator"/);
 });

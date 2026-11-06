@@ -34,7 +34,7 @@ Create an Atlassian API token in your Atlassian account security settings. The e
 ## Permissions and data handling
 
 - `storage`: saves credentials, cached comments and metadata locally; session storage retains filters, expanded conversations and the comment-page scroll position.
-- `alarms`: schedules background synchronization every five minutes while the browser is running.
+- `alarms`: resumes background synchronization if the browser suspends the worker.
 - Optional host permission: requested only for the configured Confluence origin.
 - The API token is stored in `chrome.storage.local` in the browser profile. This is local storage, **not encrypted secret storage**. Anyone with access to the same browser profile may potentially access it. Do not use this extension on a shared/untrusted browser profile.
 - API requests are sent only to the configured Confluence host. No external backend, telemetry or analytics are used. The optional search Easter egg loads the same GIF from `i.gifer.com` as JiraLog, without a referrer, only when its trigger phrase is entered.
@@ -54,7 +54,7 @@ Uses the [Confluence Cloud comment REST API v2](https://developer.atlassian.com/
 
 Results are limited to content accessible to the signed-in account. An API failure is displayed with its API path on the comment page; previously loaded results remain available. Inaccessible individual comments or authors produce an incomplete-results notice. Connection messages stay on the settings page; loading stays inside the comment list. Large tenants may take longer to load. Mention detection uses explicit ADF account IDs or storage-format mention attributes, rather than matching names in text.
 
-A background service worker refreshes the cache about every five minutes, including while the popup is closed. Browser sleep or shutdown may delay updates. The popup immediately shows the last saved comments and their update timestamp; opening it does not refetch a fresh cache. The refresh button forces synchronization. Offline errors retain the last successful snapshot; HTTP 401 invalidates it.
+A background service worker starts a new synchronization immediately after the previous pass finishes, while the popup is open. When it closes, the current pass finishes and saves its cache, then the loop pauses. Reopening immediately starts a new pass or joins one still in progress. Passes do not overlap. A 30-second recovery alarm resumes the loop after worker suspension only if a popup is still open; the alarm and timer are removed when the popup closes. Browser sleep or shutdown may delay updates. The popup immediately shows the last saved comments and their update timestamp; opening it shows cached entries immediately and starts or joins a synchronization. Synchronization is automatic while the popup is open; there is no manual reload button. A small rotating indicator beside Updated shows an active pass; rate-limit delays still apply. Offline errors retain the last successful snapshot; HTTP 401 invalidates it.
 
 Refreshes still enumerate the current open comment collections to discover new replies, deletions and resolution changes; there is no reliable delta feed. Original-author lookups are reused across refreshes, and page/user metadata is refreshed at most hourly. Overlapping refresh requests are deduplicated. If one comment collection fails, its last successful cached conversations are retained with an incomplete-results note. Cache writes are scoped to the configured host and account and rejected if credentials change during a request. Cached comment text remains in local browser storage.
 
@@ -79,3 +79,5 @@ Initial loading and background refresh include both open and resolved conversati
 Done is sorted by `resolutionLastModifiedAt` or `resolutionLastModifiedTime`, newest first. Entries without a valid resolution timestamp come last, ordered by conversation activity. The resolution timestamp is also shown on resolved entries when available.
 
 Resolved entries show the person identified by `resolutionLastModifierId` when supplied by Confluence. Their display name is resolved through the same cached user lookup used for comment authors; if unavailable, the account ID is shown.
+
+The continuous loop pauses on failures with exponential backoff (30 seconds up to 5 minutes), and honors longer `Retry-After` delays for HTTP 429/503. The retry deadline survives worker restart. Authentication/permission failures pause automatic updates until credentials or host permissions change. This polling mode increases API traffic compared to a fixed five-minute interval.

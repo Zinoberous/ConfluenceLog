@@ -71,7 +71,6 @@ function applyCommentCache(cache) {
   if (!matchesConfluenceCache(cache, state.settings) || (cache.revision ?? 0) < state.cacheRevision) return false;
   if (!dataClient.restore(cache)) return false;
   state.hasCache = true; state.cacheRevision = cache.revision ?? 0;
-  setLoadHints((cache.warnings ?? []).map(warning => t(warning)));
   updateConnectionState(true); render();
   return true;
 }
@@ -105,8 +104,7 @@ async function loadComments(force = true) {
   if (state.loading) return;
   if (!state.settings.host || !state.settings.email || !state.settings.token) { showEmpty(t("configure")); return; }
   state.loading = true; hideNotice();
-  if (!state.hasCache) setLoadHints([]);
-  render(); $("refreshButton").disabled = true;
+  render();
   try {
     const cache = await workerRequest("refresh", { force });
     applyCommentCache(cache); hideNotice();
@@ -115,7 +113,8 @@ async function loadComments(force = true) {
     if (!state.me) showNotice(`${t("requestFailed")} (${t(error.message)})`, "error");
     if (error.status === 401) { state.me = null; state.hasCache = false; state.comments = []; updateConnectionState(false); showNotice(t("authFailed"), "error"); }
   } finally {
-    state.loading = false; $("refreshButton").disabled = false; render(); flushPendingCache();
+    state.loading = false;
+    render(); flushPendingCache();
   }
 }
 function applySyncStatus(status) {
@@ -125,18 +124,11 @@ function applySyncStatus(status) {
     if (state.pageNavigationVersion === 0) activatePage("comments");
     render();
   }
-  $("refreshButton").classList.toggle("syncing", status.state === "syncing");
-  $("refreshButton").title = t(status.state === "syncing" ? "backgroundRefresh" : "refresh");
+  $("syncIndicator").title = t(status.state === "syncing" ? "backgroundRefresh" : "updated");
   if (status.state === "error") {
     if (status.status === 401) { state.me = null; state.hasCache = false; state.comments = []; updateConnectionState(false); showNotice(t("authFailed"), "error"); }
     else if (state.hasCache) showNotice(`${t("cachedRefreshFailed")} (${t(status.message)})`, "error", "comments");
   } else if (status.state === "idle") hideNotice();
-}
-function setLoadHints(warnings) {
-  const details = $("loadHints");
-  details.classList.toggle("hidden", !warnings.length);
-  if (!warnings.length) details.open = false;
-  $("loadHintsText").textContent = warnings.join(" · ");
 }
 function showNotice(message, type = "info", page = "settings") { const el = $(page === "comments" ? "notice" : "settingsNotice"); el.textContent = message; el.className = `notice ${type}`; }
 function hideNotice() { $("notice").className = "notice hidden"; }
@@ -147,9 +139,28 @@ function updateConnectionState(connected = Boolean(state.me)) {
   if (!connected) activatePage("settings");
 }
 function make(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
+function commentGroups() {
+  const groups = { mine: [], watched: [], done: [] };
+  const query = state.query.toLowerCase();
+  for (const item of state.comments) {
+    if (state.kind !== "all" && item.kind !== state.kind) continue;
+    if (query && !`${item.pageTitle} ${item.all.map(comment => bodyText(comment.body)).join(" ")}`.toLowerCase().includes(query)) continue;
+    if (!item.open) groups.done.push(item);
+    else {
+      if (item.mine) groups.mine.push(item);
+      if (item.watched) groups.watched.push(item);
+    }
+  }
+  return groups;
+}
 function render() {
   rememberScroll(); restoreScroll();
   const list = $("commentList");
+  const groups = commentGroups();
+  document.querySelectorAll(".filter-tab").forEach(tab => {
+    const count = state.loading && !state.hasCache ? "–" : groups[tab.dataset.filter].length;
+    tab.textContent = `${t(tab.dataset.filter)} (${count})`;
+  });
   list.setAttribute("aria-busy", String(state.loading));
   if (state.query.trim().toLowerCase() === "easter egg") {
     const egg = make("div", "search-easter-egg");
@@ -167,19 +178,13 @@ function render() {
     $("resultCount").textContent = "";
     return;
   }
-  const filtered = state.comments.filter(item => {
-    const category = state.activeTab === "done" ? true : state.activeTab === "mine" ? item.mine : state.activeTab === "watched" && item.watched;
-    const open = item.open;
-    if (state.activeTab === "done" ? open : !open) return false;
-    const q = state.query.toLowerCase();
-    return category && (state.kind === "all" || item.kind === state.kind) && (!q || `${item.pageTitle} ${item.all.map(c => bodyText(c.body)).join(" ")}`.toLowerCase().includes(q));
-  });
+  const filtered = groups[state.activeTab] ?? [];
   if (state.activeTab === "done") filtered.sort((a, b) =>
     (Date.parse(b.resolvedAt) || 0) - (Date.parse(a.resolvedAt) || 0) ||
     (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
   $("openCount").textContent = state.comments.filter(item => item.open).length;
   $("resultCount").textContent = `${filtered.length} ${t("resultCount")}`;
-  $("lastUpdated").textContent = state.lastUpdated ? `${t("updated")}: ${dateValue(state.lastUpdated)}` : "";
+  $("lastUpdated").textContent = state.lastUpdated ? `${t("updated")}: ${dateValue(state.lastUpdated, true)}` : "";
   list.replaceChildren();
   if (!state.comments.length) { showEmpty(state.me ? t("noAccess") : t("configure")); return; }
   if (!filtered.length) { showEmpty(t("noResults")); return; }
@@ -324,18 +329,26 @@ function appendConversation(card, item) {
 }
 Object.assign(i18n.de, {
   backgroundRefresh: "Wird im Hintergrund aktualisiert …", cachedRefreshFailed: "Aktualisierung fehlgeschlagen. Letzter gespeicherter Stand wird angezeigt.",
-  loadHints: "Hinweise zur Übersicht",
   partialResults: "Die Übersicht ist unvollständig.", missingComments: "Einzelne Seiten oder Kommentare sind nicht mehr zugänglich.", missingAuthors: "Einzelne ursprüngliche Autoren konnten nicht ermittelt werden.",
   by: "von", resolvedOn: "Erledigt", done: "Erledigt", replies: "Antworten",
   noAccess: "Keine relevanten Kommentare vorhanden."
 });
 Object.assign(i18n.en, {
   backgroundRefresh: "Refreshing in the background …", cachedRefreshFailed: "Refresh failed. Showing the last saved data.",
-  loadHints: "Overview notes",
   partialResults: "The overview is incomplete.", missingComments: "Some pages or comments are no longer accessible.", missingAuthors: "Some original authors could not be retrieved.",
   by: "by", resolvedOn: "Resolved", done: "Done", replies: "Replies",
   noAccess: "No relevant comments found."
 });
+let popupPort;
+let popupClosing = false;
+function connectPopup() {
+  if (popupClosing || popupPort) return;
+  popupPort = chrome.runtime.connect({ name: "confluence-popup" });
+  popupPort.onDisconnect.addListener(() => {
+    popupPort = null;
+    if (!popupClosing) setTimeout(connectPopup, 500);
+  });
+}
 async function init() {
   const stored = await storage.get(["settings", "commentCache", "syncStatus"]); state.settings = { ...defaults.settings, ...(stored.settings ?? {}) };
   $("host").value = hostTenant(state.settings.host); $("email").value = state.settings.email; $("token").value = state.settings.token;
@@ -350,7 +363,6 @@ async function init() {
   }));
   $("kindFilter").addEventListener("change", e => { state.kind = e.target.value; persistView(); render(); });
   $("searchInput").addEventListener("input", e => { state.query = e.target.value; persistView(); render(); });
-  $("refreshButton").addEventListener("click", () => loadComments(true));
   $("settingsForm").addEventListener("submit", saveSettings);
   $("themeMode").addEventListener("change", async e => { state.settings.themeMode = e.target.value; applyTheme(); await storage.set({ settings: state.settings }); });
   $("languageMode").addEventListener("change", async e => { state.settings.languageMode = e.target.value; await storage.set({ settings: state.settings }); applyLanguage(); });
@@ -360,7 +372,10 @@ async function init() {
     clearTimeout(scrollSaveTimer);
     scrollSaveTimer = setTimeout(persistView, 120);
   }, { passive: true });
-  window.addEventListener("pagehide", () => { rememberScroll(); persistView(); });
+  window.addEventListener("pagehide", () => {
+    rememberScroll(); persistView();
+    popupClosing = true; popupPort?.disconnect(); popupPort = null;
+  });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes.commentCache?.newValue) {
@@ -370,6 +385,7 @@ async function init() {
     }
     if (changes.syncStatus) applySyncStatus(changes.syncStatus.newValue);
   });
+  connectPopup();
   updateConnectionState(false);
   if (state.settings.host && state.settings.email && state.settings.token) {
     const permitted = await chrome.permissions.contains({ origins: [`${originOf(state.settings.host)}/*`] });
@@ -388,7 +404,7 @@ async function init() {
       }
     }
     if (restored) { activatePage("comments"); applySyncStatus(stored.syncStatus); }
-    await loadComments(false);
+    await loadComments(true);
     if (state.me && state.pageNavigationVersion === 0) activatePage("comments");
   }
 }
