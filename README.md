@@ -10,6 +10,7 @@ A Microsoft Edge / Chromium extension that provides a personal overview for Conf
 - Personal comment categories: **My comments** (threads you started), **Involved** (threads you replied to or were mentioned in)
 - Inline and page comments with Open/Done views based on the returned `resolutionStatus`
 - Search by page title and comment text
+- Dedicated Tasks page for open tasks assigned to the signed-in account, with optional due dates
 - Opens the relevant Confluence page from each result
 - Light/dark theme and German/English UI
 - Local browser storage; no external backend or analytics
@@ -47,6 +48,16 @@ The popup shows threads containing your own comments or explicit mentions of you
 - Entries show the complete original comment, labels and a direct Confluence link.
 - When replies exist, expand Replies to read them without repeating the original comment. Filters and expanded conversations survive popup closure within the same browser session.
 - The extension is read-only: replying and resolving are performed in Confluence. No comment POST, PUT or DELETE requests are exposed by the popup or background worker.
+
+## Assigned tasks
+
+The Tasks navigation item shows open tasks assigned to the connected account. Tasks are fetched through the public [Confluence Cloud task API v2](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-task/) using `status=incomplete`, `assigned-to=<accountId>`, `limit=250` and cursor pagination. Both filters are also checked locally.
+
+Each entry shows its text, the containing page or blog post, an optional due date and a link to Confluence. The nearest due date comes first, including overdue tasks; entries without a due date come last. Due dates retain their calendar date rather than shifting with the browser timezone. Search filters task text and page title.
+
+Tasks share the existing popup-driven synchronization loop and local cache. Closing the popup lets the current pass finish, then pauses the loop. Task search and scroll position are retained separately from the comments page. Failed task refreshes keep the previous task list and show a page-specific error with its last successful timestamp. Task completion and editing remain in Confluence.
+
+Notifications are not implemented: no private or undocumented notifications endpoints will be used. A supported public API is a prerequisite for any future notifications integration.
 
 ## API and limitations
 

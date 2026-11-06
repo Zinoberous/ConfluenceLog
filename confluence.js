@@ -1,6 +1,8 @@
 // Shared by the popup and the Manifest V3 background worker. No UI dependencies.
 function createConfluenceClient(state, t = key => key, lang = () => "en") {
   state.originals ??= new Map();
+  state.tasks ??= [];
+  state.tasksError ??= null;
 function originOf(host) { return new URL(host).origin; }
 function authHeader() { return "Basic " + btoa(`${state.settings.email}:${state.settings.token}`); }
 function safeNextUrl(next) {
@@ -50,21 +52,21 @@ function htmlText(value) {
     return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
   });
 }
-function bodyText(body) {
+function bodyText(body, excludedMentionId) {
   if (!body) return "";
   if (typeof body === "string") return htmlText(body).replace(/\s+/g, " ").trim();
   const adf = body.atlas_doc_format?.value ?? body.atlas_doc_format ?? body;
   if (typeof adf === "string") {
-    try { return bodyText(JSON.parse(adf)); } catch { return adf.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); }
+    try { return bodyText(JSON.parse(adf), excludedMentionId); } catch { return adf.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); }
   }
-  if (body.storage?.value) return bodyText(body.storage.value);
+  if (body.storage?.value) return bodyText(body.storage.value, excludedMentionId);
   const parts = [];
   const walk = node => {
     if (!node) return;
     if (Array.isArray(node)) { node.forEach(walk); return; }
     if (typeof node !== "object") return;
     if (node.type === "text" && node.text) parts.push(node.text);
-    if (node.type === "mention") parts.push(node.attrs?.text ?? "@mention");
+    if (node.type === "mention" && !(excludedMentionId && [node.attrs?.id, node.attrs?.accountId, node.attrs?.userId].includes(excludedMentionId))) parts.push(node.attrs?.text ?? "@mention");
     if (node.type === "hardBreak") parts.push(" ");
     if (node.content) walk(node.content);
     if (["paragraph", "heading", "listItem"].includes(node.type)) parts.push(" ");
@@ -249,12 +251,41 @@ async function parallelMap(items, fn) {
 function itemKey(item) { return `${state.settings.host}|${state.me?.accountId}|${item.kind}|${item.id}`; }
 function displayAuthor(comment) { return state.users.get(authorId(comment))?.displayName ?? comment.author?.displayName ?? authorId(comment); }
 
+async function loadTasks() {
+  if (!state.me?.accountId) throw new Error("authFailed");
+  const accountId = state.me.accountId;
+  const tasks = (await getAll(`/wiki/api/v2/tasks?limit=250&status=incomplete&assigned-to=${encodeURIComponent(accountId)}&body-format=atlas_doc_format`))
+    .filter(task => task.status === "incomplete" && task.assignedTo === accountId && bodyText(task.body, task.assignedTo).trim());
+  await parallelMap([...new Set(tasks.map(task => task.createdBy).filter(Boolean))], async id => {
+    if (!state.users.has(id)) {
+      try { state.users.set(id, await api(`/wiki/rest/api/user?accountId=${encodeURIComponent(id)}`)); }
+      catch (error) { if ([429,503].includes(error.status)) throw error; state.users.set(id, { displayName: id }); }
+    }
+  });
+  await parallelMap([...new Map(tasks.filter(task => task.pageId || task.blogPostId).map(task => {
+    const id = String(task.pageId ?? task.blogPostId);
+    return [id, { id, type: task.pageId ? "pages" : "blogposts" }];
+  })).values()], async ({ id, type }) => {
+    if (!state.pages.has(id)) {
+      try { state.pages.set(id, await api(`/wiki/api/v2/${type}/${encodeURIComponent(id)}`)); }
+      catch (error) { if (![403,404].includes(error.status)) throw error; }
+    }
+  });
+  return tasks.map(task => {
+    const pageId = String(task.pageId ?? task.blogPostId ?? "");
+    const dueDate = typeof task.dueAt === "string" && Number.isFinite(Date.parse(task.dueAt)) ? task.dueAt.slice(0,10) : null;
+    return { ...task, text: bodyText(task.body, task.assignedTo), pageTitle: state.pages.get(pageId)?.title ?? t("noPage"),
+      dueDate, url: pageId ? pageUrl(pageId) : null };
+  }).sort((a,b) => (a.dueDate ?? "9999-99-99").localeCompare(b.dueDate ?? "9999-99-99") ||
+    (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0) || String(a.id).localeCompare(String(b.id)));
+}
   function snapshot(warnings = []) {
     return {
-      schema: 3, host: state.settings.host, email: state.settings.email, me: state.me,
+      schema: 4, host: state.settings.host, email: state.settings.email, me: state.me,
       updatedAt: new Date(state.lastUpdated ?? Date.now()).toISOString(), revision: Date.now(),
       threads: state.comments.map(item => ({ kind: item.kind,
         comments: item.all.map(({ children, ...comment }) => comment) })),
+      tasks: state.tasks, tasksError: state.tasksError, tasksUpdatedAt: state.tasksUpdatedAt ?? null,
       pages: [...state.pages], users: [...state.users], originals: [...state.originals], warnings,
       metadataAt: state.metadataAt ?? Date.now()
     };
@@ -264,12 +295,13 @@ function displayAuthor(comment) { return state.users.get(authorId(comment))?.dis
     state.me = cache.me; state.pages = new Map(cache.pages ?? []); state.users = new Map(cache.users ?? []);
     state.originals = new Map(cache.originals ?? []); state.metadataAt = cache.metadataAt;
     state.comments = cache.threads.flatMap(thread => buildThreads(thread.comments, thread.kind));
+    state.tasks = cache.tasks ?? []; state.tasksError = cache.tasksError ?? null; state.tasksUpdatedAt = cache.tasksUpdatedAt ?? null;
     state.lastUpdated = new Date(cache.updatedAt);
     return true;
   }
-  return { originOf, authHeader, safeNextUrl, api, getAll, authorId, createdAt, bodyText, mentionsAccount, pageUrl, dateValue, isOpen, filterOpenComments, buildThreads, createCommentLoadContext, loadPageComments, parallelMap, itemKey, displayAuthor, commentSources, snapshot, restore };
+  return { originOf, authHeader, safeNextUrl, api, getAll, authorId, createdAt, bodyText, mentionsAccount, pageUrl, dateValue, isOpen, filterOpenComments, buildThreads, createCommentLoadContext, loadPageComments, parallelMap, itemKey, displayAuthor, commentSources, loadTasks, snapshot, restore };
 }
 function matchesConfluenceCache(cache, settings) {
-  return cache?.schema === 3 && cache.host === settings.host && cache.email === settings.email &&
+  return cache?.schema === 4 && cache.host === settings.host && cache.email === settings.email &&
     Boolean(cache.me?.accountId) && Array.isArray(cache.threads) && Number.isFinite(Date.parse(cache.updatedAt));
 }

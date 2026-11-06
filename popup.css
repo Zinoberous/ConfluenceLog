@@ -99,3 +99,14 @@ a.secondary-button{display:inline-flex;align-items:center;text-decoration:none}
 .brand-emoji{width:34px;height:34px;display:grid;place-items:center;font-size:22px;line-height:1;user-select:none;cursor:pointer}
 .search-easter-egg{display:grid;place-items:center;padding:8px;grid-column:1/-1}
 .search-easter-egg img{height:317px;max-width:100%;object-fit:contain}
+
+body.logged-out .tab[data-page="tasks"],body.logged-out #pageTasks{display:none!important}
+.task-list{display:grid;grid-template-columns:1fr;gap:9px}
+.task-card{min-width:0;display:flex;flex-direction:column;gap:8px;padding:11px;border:1px solid var(--border);border-radius:9px;background:var(--surface)}
+.task-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.45}
+.task-card-footer{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.task-card-footer .open-link{margin-left:auto}
+.task-due{font-size:11px;border:1px solid var(--border);border-radius:5px;padding:3px 7px;color:var(--text);background:var(--surface-2)}
+.task-due.due-today{color:#f5cf60;border-color:#a7872b;background:rgba(230,184,40,.12)}
+.task-due.overdue{color:var(--danger);border-color:var(--danger);background:rgba(220,55,55,.12)}
+:root[data-theme^="light"] .task-due.due-today{color:#805f00;border-color:#aa8100;background:#fff3c4}

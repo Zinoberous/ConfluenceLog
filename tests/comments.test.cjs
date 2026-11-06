@@ -147,6 +147,7 @@ test('loading and connection notices belong to their respective pages', () => {
 function popupDocument(a) {
   function element(tagName) {
     return { tagName, listeners: {},
+      get childElementCount(){return this.children.length;},
       addEventListener(type, callback) { this.listeners[type] = callback; },
       children: [], attributes: {}, className: '', textContent: '', open: false,
       classList: { toggle() {} },
@@ -288,7 +289,8 @@ test('cache restoration is account-scoped and session view retains filters witho
   assert.equal(a.run('applyCommentCache(cached)'),false);
   let saved;
   a.set('saveView', value => {saved=value; return Promise.resolve();});
-  a.run(`chrome.storage.session={set:saveView}; state.query='Search'; state.kind='footer'; state.expanded.add('thread|conversation'); persistView();`);
+  a.run(`chrome.storage.session={set:saveView}; state.activePage='tasks'; state.query='Search'; state.kind='footer'; state.expanded.add('thread|conversation'); persistView();`);
+  assert.equal(saved.commentView.activePage,'tasks');
   assert.equal(saved.commentView.query,'Search');
   assert.equal(saved.commentView.kind,'footer');
   assert.equal(saved.commentView.drafts,undefined);
@@ -432,4 +434,84 @@ test('sync status changes do not restart the continuous indicator animation', ()
   assert.doesNotMatch(html,/id="refreshButton"/);
   assert.match(fs.readFileSync('popup.css','utf8'),/\.sync-indicator\{animation:confluencelog-spin/);
   assert.match(html,/id="lastUpdated"><\/span><span id="syncIndicator"/);
+});
+for (const status of ['incomplete','complete']) {
+  test(`tasks: server status ${status} and assignee are validated locally`, async () => {
+    const a=app();
+    const calls=mockFetch(a,url=>{
+      if(url.pathname==='/wiki/api/v2/tasks') {
+        assert.equal(url.searchParams.get('status'),'incomplete');
+        assert.equal(url.searchParams.get('assigned-to'),'me');
+        assert.equal(url.searchParams.get('limit'),'250');
+        return {data:{results:[{id:'1',status,assignedTo:'me',body:body('Task')},{id:'2',status:'incomplete',assignedTo:'other',body:body('Other task')}]}};
+      }
+      throw new Error('Unexpected request: '+url);
+    });
+    const tasks=await a.run('dataClient.loadTasks()');
+    assert.equal(tasks.length,status==='incomplete'?1:0);
+    if(tasks.length) assert.equal(tasks[0].text,'Task');
+    assert.equal(calls.length,1);
+  });
+}
+test('tasks paginate, load page and blog metadata, and sort by date with undated entries last', async () => {
+  const a=app();
+  mockFetch(a,url=>{
+    if(url.pathname==='/wiki/api/v2/tasks') return {data:url.searchParams.has('cursor')?{results:[
+      {id:'2',status:'incomplete',assignedTo:'me',blogPostId:'10',dueAt:'2026-11-01T00:00:00Z',body:body('Earlier')},
+      {id:'3',status:'incomplete',assignedTo:'me',body:body('No date')}
+    ]}:{results:[{id:'1',status:'incomplete',assignedTo:'me',pageId:'9',dueAt:'2026-11-06T00:00:00Z',body:body('Later')}],_links:{next:'/wiki/api/v2/tasks?cursor=next'}}};
+    if(url.pathname==='/wiki/api/v2/pages/9')return {data:{id:'9',title:'Task page'}};
+    if(url.pathname==='/wiki/api/v2/blogposts/10')return {data:{id:'10',title:'Task blog'}};
+    throw new Error('Unexpected request: '+url);
+  });
+  const tasks=await a.run('dataClient.loadTasks()');
+  assert.deepEqual(Array.from(tasks,task=>task.id),['2','1','3']);
+  assert.equal(tasks[0].pageTitle,'Task blog'); assert.equal(tasks[1].pageTitle,'Task page');
+  assert.equal(tasks[1].dueDate,'2026-11-06'); assert.equal(tasks[2].dueDate,null);
+  assert.match(tasks[1].url,/pageId=9/);
+});
+test('task text excludes the assignee mention but preserves other mentions and comment text', () => {
+  const a=app();
+  a.set('taskBody',{atlas_doc_format:{value:JSON.stringify({type:'doc',content:[{type:'paragraph',content:[
+    {type:'mention',attrs:{id:'me',text:'@Alexander'}},
+    {type:'text',text:' Check with '},
+    {type:'mention',attrs:{id:'other',text:'@Other'}}
+  ]}]})}});
+  assert.equal(a.run("bodyText(taskBody, 'me')"),'Check with @Other');
+  assert.equal(a.run('bodyText(taskBody)'),'@Alexander Check with @Other');
+});
+test('task cards display dates only when present and survive cache restoration', () => {
+  const a=app(); const node=popupDocument(a);
+  a.run(`state.tasks=[{id:'1',text:'Dated task',pageTitle:'Page',dueDate:'2026-11-06',url:pageUrl('9')},{id:'2',text:'Undated task',pageTitle:'Page',dueDate:null,url:pageUrl('9')}]; state.tasksUpdatedAt='2026-11-06T12:34:56Z'; renderTasks()`);
+  const cards=node('taskList').children;
+  assert.equal(cards[0].children[0].children[0].textContent,'Page');
+  assert.equal(cards[0].children[1].textContent,'Dated task');
+  assert.equal(cards.length,2); assert.match(cards[0].children[2].children[0].textContent,/Fällig: 06.11.2026/);
+  assert.equal(cards[1].children[2].children.length,1); assert.equal(cards[1].children[2].children[0].tagName,'a');
+  a.run(`state.lastUpdated=new Date();globalThis.cache=dataClient.snapshot();state.tasks=[];applyCommentCache(cache)`);
+  assert.equal(node('taskList').children.length,2); assert.equal(node('taskCount').textContent,2);
+  a.run(`state.taskQuery='Undated';renderTasks()`);
+  assert.equal(node('taskList').children.length,1);
+});
+test('task creators are loaded once and rendered with the creation time above the task text', async () => {
+  const a=app(); const node=popupDocument(a);
+  let userRequests=0;
+  mockFetch(a,url=>{
+    if(url.pathname==='/wiki/api/v2/tasks') return {data:{results:[1,2].map(id=>({id:String(id),status:'incomplete',assignedTo:'me',createdBy:'creator',createdAt:'2026-11-06T10:05:00Z',body:body('Task')}))}};
+    if(url.pathname==='/wiki/rest/api/user') { userRequests++; assert.equal(url.searchParams.get('accountId'),'creator'); return {data:{displayName:'Task Creator'}}; }
+    throw new Error('Unexpected request: '+url);
+  });
+  await a.run('dataClient.loadTasks().then(tasks=>{state.tasks=tasks;renderTasks()})');
+  assert.equal(userRequests,1);
+  const card=node('taskList').children[0];
+  assert.equal(card.children[1].textContent,a.run("'Task Creator · '+dateValue('2026-11-06T10:05:00Z')"));
+  assert.equal(card.children[2].textContent,'Task');
+  await a.run('dataClient.loadTasks()');
+  assert.equal(userRequests,1);
+});
+test('task errors are shown separately instead of reporting an empty task list', () => {
+  const a=app(); const node=popupDocument(a);
+  a.run(`state.tasksError={message:'HTTP 403'};renderTasks()`);
+  assert.match(node('taskNotice').textContent,/HTTP 403/);
+  assert.equal(node('taskList').children.length,0);
 });

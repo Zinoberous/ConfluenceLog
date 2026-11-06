@@ -2,7 +2,7 @@ const storage = chrome.storage.local;
 const defaults = { settings: { host: "", email: "", token: "", themeMode: "system", languageMode: "system" } };
 const state = {
   settings: { ...defaults.settings }, me: null, comments: [], pages: new Map(), activeTab: "mine", kind: "all", expanded: new Set(), users: new Map(),
-  query: "", activePage: "comments", scrollTop: 0, restoringScroll: false, scrollRestoreVersion: 0, loading: false, hasCache: false, cacheRevision: 0, pendingCache: null, lastUpdated: null, pageNavigationVersion: 0
+  query: "", taskQuery: "", taskScrollTop: 0, syncError: null, activePage: "comments", scrollTop: 0, restoringScroll: false, scrollRestoreVersion: 0, loading: false, hasCache: false, cacheRevision: 0, pendingCache: null, lastUpdated: null, pageNavigationVersion: 0
 };
 const $ = (id) => document.getElementById(id);
 
@@ -44,6 +44,7 @@ function applyLanguage() {
   document.documentElement.lang = lang();
   document.querySelectorAll("[data-i18n]").forEach(el => el.textContent = t(el.dataset.i18n));
   document.querySelectorAll("[data-i18n-placeholder]").forEach(el => el.placeholder = t(el.dataset.i18nPlaceholder));
+  document.querySelectorAll("[data-i18n-title]").forEach(el => { el.title = t(el.dataset.i18nTitle); el.setAttribute("aria-label", t(el.dataset.i18nTitle)); });
   updateConnectionState(); render();
 }
 function normalizeHost(value) {
@@ -83,20 +84,21 @@ function persistView() {
   if (!state.me || !chrome.storage.session) return;
   chrome.storage.session.set({ commentView: {
     host: state.settings.host, email: state.settings.email, accountId: state.me.accountId,
-    activeTab: state.activeTab, kind: state.kind, query: state.query, scrollTop: state.scrollTop, expanded: [...state.expanded]
+    activePage: state.activePage, activeTab: state.activeTab, kind: state.kind, query: state.query, taskQuery: state.taskQuery, taskScrollTop: state.taskScrollTop, scrollTop: state.scrollTop, expanded: [...state.expanded]
   } }).catch(console.error);
 }
 function rememberScroll() {
-  if (typeof window === "undefined" || state.activePage !== "comments" || state.restoringScroll) return;
-  state.scrollTop = Math.max(0, window.scrollY);
+  if (typeof window === "undefined" || !["comments", "tasks"].includes(state.activePage) || state.restoringScroll) return;
+  state[state.activePage === "tasks" ? "taskScrollTop" : "scrollTop"] = Math.max(0, window.scrollY);
 }
 function restoreScroll() {
-  if (typeof window === "undefined" || state.activePage !== "comments") return;
+  if (typeof window === "undefined" || !["comments", "tasks"].includes(state.activePage)) return;
   state.restoringScroll = true;
   const version = ++state.scrollRestoreVersion;
+  const page = state.activePage;
   window.requestAnimationFrame(() => {
     if (version !== state.scrollRestoreVersion) return;
-    if (state.activePage === "comments") window.scrollTo(0, state.scrollTop);
+    if (state.activePage === page) window.scrollTo(0, page === "tasks" ? state.taskScrollTop : state.scrollTop);
     state.restoringScroll = false;
   });
 }
@@ -107,11 +109,12 @@ async function loadComments(force = true) {
   render();
   try {
     const cache = await workerRequest("refresh", { force });
-    applyCommentCache(cache); hideNotice();
+    state.syncError = null; applyCommentCache(cache); hideNotice();
   } catch (error) {
+    state.syncError = error.message;
     showNotice(error.status === 401 ? t("authFailed") : `${t("requestFailed")} (${t(error.message)})`, "error", "comments");
     if (!state.me) showNotice(`${t("requestFailed")} (${t(error.message)})`, "error");
-    if (error.status === 401) { state.me = null; state.hasCache = false; state.comments = []; updateConnectionState(false); showNotice(t("authFailed"), "error"); }
+    if (error.status === 401) { state.me = null; state.hasCache = false; state.comments = []; state.tasks = []; state.tasksUpdatedAt = null; state.tasksError = null; updateConnectionState(false); showNotice(t("authFailed"), "error"); }
   } finally {
     state.loading = false;
     render(); flushPendingCache();
@@ -124,9 +127,11 @@ function applySyncStatus(status) {
     if (state.pageNavigationVersion === 0) activatePage("comments");
     render();
   }
-  $("syncIndicator").title = t(status.state === "syncing" ? "backgroundRefresh" : "updated");
+  for (const id of ["syncIndicator", "taskSyncIndicator"]) $(id).title = t(status.state === "syncing" ? "backgroundRefresh" : "updated");
+  state.syncError = status.state === "error" ? status.message : null;
+  renderTasks();
   if (status.state === "error") {
-    if (status.status === 401) { state.me = null; state.hasCache = false; state.comments = []; updateConnectionState(false); showNotice(t("authFailed"), "error"); }
+    if (status.status === 401) { state.me = null; state.hasCache = false; state.comments = []; state.tasks = []; state.tasksUpdatedAt = null; state.tasksError = null; updateConnectionState(false); showNotice(t("authFailed"), "error"); }
     else if (state.hasCache) showNotice(`${t("cachedRefreshFailed")} (${t(status.message)})`, "error", "comments");
   } else if (status.state === "idle") hideNotice();
 }
@@ -153,8 +158,54 @@ function commentGroups() {
   }
   return groups;
 }
+function renderTasks() {
+  const list = $("taskList");
+  const tasks = (state.tasks ?? []).filter(task => (task.body ? bodyText(task.body, task.assignedTo) : task.text ?? "").trim());
+  const query = state.taskQuery.toLowerCase();
+  const filtered = tasks.filter(task => !query || `${task.text} ${task.pageTitle}`.toLowerCase().includes(query));
+  $("taskCount").textContent = state.loading && !state.tasksUpdatedAt ? "–" : tasks.length;
+  $("taskResultCount").textContent = `${filtered.length} ${t("resultCount")}`;
+  $("tasksLastUpdated").textContent = state.tasksUpdatedAt ? `${t("updated")}: ${dateValue(state.tasksUpdatedAt, true)}` : "";
+  const error = state.tasksError?.message ?? state.syncError;
+  $("taskNotice").className = error ? "notice error" : "notice hidden";
+  $("taskNotice").textContent = error ? `${t("tasksFailed")} (${t(error)})` : "";
+  list.setAttribute("aria-busy", String(state.loading)); list.replaceChildren();
+  if (state.loading && !state.tasksUpdatedAt) {
+    const loading = make("div", "empty loading-state"); const spinner = make("span", "spinner"); spinner.setAttribute("aria-hidden", "true");
+    loading.append(spinner, make("span", "", t("loadingTasks"))); list.append(loading); return;
+  }
+  if (!filtered.length) {
+    if (!error) list.append(make("div", "empty", !state.me ? t("configure") : query ? t("noMatchingTasks") : t("noTasks")));
+    return;
+  }
+  for (const task of filtered) {
+    const card = make("article", "task-card");
+    const title = make("div", "comment-title");
+    title.append(make("strong", "", task.pageTitle === "noPage" ? t("noPage") : task.pageTitle));
+    const text = task.body ? bodyText(task.body, task.assignedTo) : task.text;
+    const author = displayAuthor({ authorId: task.createdBy });
+    const meta = [author, task.createdAt ? dateValue(task.createdAt) : ""].filter(Boolean).join(" · ");
+    card.append(title);
+    if (meta) card.append(make("div", "comment-meta", meta));
+    card.append(make("p", "task-text", text || t("untitledTask")));
+    const footer = make("div", "task-card-footer");
+    if (task.dueDate) {
+      const date = new Intl.DateTimeFormat(lang(), { dateStyle: "medium" }).format(new Date(`${task.dueDate}T12:00:00`));
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const urgency = task.dueDate < today ? " overdue" : task.dueDate === today ? " due-today" : "";
+      footer.append(make("span", `task-due${urgency}`, `${t("dueDate")}: ${date}`));
+    }
+    if (task.url) {
+      const link = make("a", "open-link", t("openPage")); link.href = task.url; link.target = "_blank"; link.rel = "noopener noreferrer";
+      link.addEventListener("click", () => { rememberScroll(); persistView(); }); footer.append(link);
+    }
+    if (footer.childElementCount) card.append(footer);
+    list.append(card);
+  }
+}
 function render() {
-  rememberScroll(); restoreScroll();
+  rememberScroll(); restoreScroll(); renderTasks();
   const list = $("commentList");
   const groups = commentGroups();
   document.querySelectorAll(".filter-tab").forEach(tab => {
@@ -235,7 +286,7 @@ async function saveSettings(event) {
       const me = await api("/wiki/rest/api/user/current");
       if (!me?.accountId) throw new Error("Confluence hat keinen gültigen Benutzer zurückgegeben.");
       state.me = me;
-      state.comments = []; state.pages.clear(); state.users.clear(); state.originals.clear(); state.expanded.clear();
+      state.comments = []; state.tasks = []; state.tasksUpdatedAt = null; state.tasksError = null; state.syncError = null; state.taskQuery = ""; state.taskScrollTop = 0; state.pages.clear(); state.users.clear(); state.originals.clear(); state.expanded.clear();
       state.hasCache = false; state.cacheRevision = 0; state.pendingCache = null; state.scrollTop = 0;
       await storage.remove(["commentCache", "syncStatus"]);
       if (chrome.storage.session) await chrome.storage.session.remove("commentView");
@@ -258,7 +309,7 @@ function activatePage(name) {
   state.activePage = name;
   document.querySelectorAll(".tab").forEach(el => el.classList.toggle("active", el.dataset.page === name));
   document.querySelectorAll(".page").forEach(el => el.classList.toggle("active", el.id === `page${name[0].toUpperCase()}${name.slice(1)}`));
-  if (name === "comments") restoreScroll();
+  if (["comments", "tasks"].includes(name)) restoreScroll();
 }
 function applyTheme() {
   const mode = state.settings.themeMode;
@@ -328,12 +379,18 @@ function appendConversation(card, item) {
   card.append(conversation.wrapper);
 }
 Object.assign(i18n.de, {
+  tasks: "Aufgaben", openTasks: "Mir zugewiesene offene Aufgaben", taskSearch: "Aufgaben und Seiten suchen …", dueDate: "Fällig",
+  loadingTasks: "Lade Aufgaben …", noTasks: "Keine offenen Aufgaben für dich vorhanden.", noMatchingTasks: "Keine passenden Aufgaben gefunden.",
+  tasksFailed: "Aufgaben konnten nicht aktualisiert werden", untitledTask: "Aufgabe ohne Text",
   backgroundRefresh: "Wird im Hintergrund aktualisiert …", cachedRefreshFailed: "Aktualisierung fehlgeschlagen. Letzter gespeicherter Stand wird angezeigt.",
   partialResults: "Die Übersicht ist unvollständig.", missingComments: "Einzelne Seiten oder Kommentare sind nicht mehr zugänglich.", missingAuthors: "Einzelne ursprüngliche Autoren konnten nicht ermittelt werden.",
   by: "von", resolvedOn: "Erledigt", done: "Erledigt", replies: "Antworten",
   noAccess: "Keine relevanten Kommentare vorhanden."
 });
 Object.assign(i18n.en, {
+  tasks: "Tasks", openTasks: "Open tasks assigned to me", taskSearch: "Search tasks and pages …", dueDate: "Due",
+  loadingTasks: "Loading tasks …", noTasks: "No open tasks assigned to you.", noMatchingTasks: "No matching tasks found.",
+  tasksFailed: "Tasks could not be refreshed", untitledTask: "Task without text",
   backgroundRefresh: "Refreshing in the background …", cachedRefreshFailed: "Refresh failed. Showing the last saved data.",
   partialResults: "The overview is incomplete.", missingComments: "Some pages or comments are no longer accessible.", missingAuthors: "Some original authors could not be retrieved.",
   by: "by", resolvedOn: "Resolved", done: "Done", replies: "Replies",
@@ -357,11 +414,13 @@ async function init() {
   document.querySelectorAll(".tab").forEach(el => el.addEventListener("click", () => {
     state.pageNavigationVersion++;
     activatePage(el.dataset.page);
+    persistView();
   }));
   document.querySelectorAll(".filter-tab").forEach(el => el.addEventListener("click", () => {
     state.activeTab = el.dataset.filter; document.querySelectorAll(".filter-tab").forEach(x => x.classList.toggle("active", x === el)); persistView(); render();
   }));
   $("kindFilter").addEventListener("change", e => { state.kind = e.target.value; persistView(); render(); });
+  $("taskSearchInput").addEventListener("input", e => { state.taskQuery = e.target.value; persistView(); render(); });
   $("searchInput").addEventListener("input", e => { state.query = e.target.value; persistView(); render(); });
   $("settingsForm").addEventListener("submit", saveSettings);
   $("themeMode").addEventListener("change", async e => { state.settings.themeMode = e.target.value; applyTheme(); await storage.set({ settings: state.settings }); });
@@ -394,18 +453,21 @@ async function init() {
     if (restored && chrome.storage.session) {
       const { commentView: view } = await chrome.storage.session.get("commentView");
       if (view?.host === state.settings.host && view.email === state.settings.email && view.accountId === state.me.accountId) {
+        if (state.pageNavigationVersion === 0 && ["comments", "tasks", "settings", "info"].includes(view.activePage)) state.activePage = view.activePage;
         state.activeTab = ["mine", "watched", "done"].includes(view.activeTab) ? view.activeTab : "mine";
         state.query = view.query ?? ""; state.kind = ["all", "inline", "footer"].includes(view.kind) ? view.kind : "all"; state.expanded = new Set((view.expanded ?? []).filter(key => key.endsWith("|conversation")));
         state.scrollTop = view.activeTab !== "all" && Number.isFinite(view.scrollTop) ? Math.max(0, view.scrollTop) : 0;
+        state.taskQuery = view.taskQuery ?? ""; state.taskScrollTop = Number.isFinite(view.taskScrollTop) ? Math.max(0, view.taskScrollTop) : 0;
+        $("taskSearchInput").value = state.taskQuery;
         $("kindFilter").value = state.kind;
         $("searchInput").value = state.query;
         document.querySelectorAll(".filter-tab").forEach(el => el.classList.toggle("active", el.dataset.filter === state.activeTab));
         render();
       }
     }
-    if (restored) { activatePage("comments"); applySyncStatus(stored.syncStatus); }
+    if (restored) { activatePage(state.activePage); applySyncStatus(stored.syncStatus); }
     await loadComments(true);
-    if (state.me && state.pageNavigationVersion === 0) activatePage("comments");
+    if (state.me && state.pageNavigationVersion === 0) activatePage(state.activePage);
   }
 }
 init().catch(error => { console.error(error); showNotice(error.message, "error"); });

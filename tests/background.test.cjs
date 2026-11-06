@@ -34,6 +34,7 @@ function worker(initial = {settings}, route = () => undefined, popupOpen = true)
         if (path === '/wiki/rest/api/user/current') result={data:{accountId:'me',displayName:'Me'}};
         else if (path === '/wiki/api/v2/inline-comments') result={data:{results:[root()]}};
         else if (path === '/wiki/api/v2/footer-comments') result={data:{results:[]}};
+        else if (path === '/wiki/api/v2/tasks') result={data:{results:[]}};
         else if (path === '/wiki/api/v2/inline-comments/1' && options.method === 'PUT') result={data:root(3,'resolved')};
         else if (path === '/wiki/api/v2/inline-comments/1') result={data:root(new URL(url).searchParams.has('version')?1:2)};
         else if (path === '/wiki/api/v2/pages/9') result={data:{id:'9',title:'Page'}};
@@ -77,10 +78,10 @@ test('subsequent refresh reuses original authors and metadata, and retains resol
   await a.send({action:'refresh',force:true});
   a.calls.length=0;
   await a.send({action:'refresh',force:true});
-  assert.deepEqual(a.calls.map(call => new URL(call.url).pathname), ['/wiki/rest/api/user/current','/wiki/api/v2/inline-comments','/wiki/api/v2/footer-comments']);
+  assert.deepEqual(a.calls.map(call => new URL(call.url).pathname), ['/wiki/rest/api/user/current','/wiki/api/v2/inline-comments','/wiki/api/v2/footer-comments','/wiki/api/v2/tasks']);
   closed=true; a.calls.length=0;
   await a.send({action:'refresh',force:true});
-  assert.equal(a.data.commentCache.threads.length,1); assert.equal(a.data.commentCache.threads[0].comments[0].resolutionStatus,'resolved'); assert.equal(a.calls.length,3);
+  assert.equal(a.data.commentCache.threads.length,1); assert.equal(a.data.commentCache.threads[0].comments[0].resolutionStatus,'resolved'); assert.equal(a.calls.length,4);
 });
 test('offline refresh retains last good snapshot and records failure', async () => {
   let offline=false;
@@ -225,4 +226,29 @@ test('worker restart with no popup creates no loop and makes no API requests', a
   await a.run('resumeLoop()'); assert.equal(a.calls.length,0);
   await a.openPopup();
   assert.equal([...a.timers.values()][0].delay,0);
+});
+test('task synchronization shares the cache and retains last successful tasks on API failure', async () => {
+  let failed=false, completed=false;
+  const a=worker(undefined,url=>url.pathname==='/wiki/api/v2/tasks'? failed?{status:403}:{data:{results:completed?[]:[{id:'task1',status:'incomplete',assignedTo:'me',dueAt:'2026-11-06T00:00:00Z',body:root().body}]}}:undefined);
+  await a.send({action:'refresh',force:true});
+  assert.equal(a.data.commentCache.tasks.length,1);
+  const lastUpdated=a.data.commentCache.tasksUpdatedAt;
+  failed=true;
+  const response=await a.send({action:'refresh',force:true});
+  assert.equal(response.ok,true); assert.equal(a.data.commentCache.tasks.length,1);
+  assert.equal(a.data.commentCache.tasksUpdatedAt,lastUpdated);
+  assert.equal(a.data.commentCache.tasksError.status,403);
+  assert.equal(a.data.commentCache.threads.length,1);
+  failed=false;completed=true;a.data.syncControl.nextAllowedAt=0;
+  await a.send({action:'refresh',force:true});
+  assert.equal(a.data.commentCache.tasks.length,0);assert.equal(a.data.commentCache.tasksError,null);
+});
+test('tasks can synchronize when both comment collections are unavailable', async () => {
+  const a=worker(undefined,url=>{
+    if(url.pathname.endsWith('-comments')) return {status:500};
+    if(url.pathname==='/wiki/api/v2/tasks') return {data:{results:[{id:'1',status:'incomplete',assignedTo:'me',body:root().body}]}};
+  });
+  const response=await a.send({action:'refresh',force:true});
+  assert.equal(response.ok,true);assert.equal(a.data.commentCache.tasks.length,1);
+  assert.equal(a.data.commentCache.threads.length,0);assert.equal(a.data.commentCache.incomplete,true);
 });

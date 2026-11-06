@@ -97,12 +97,12 @@ async function refreshNow(force) {
     const me = await client.api("/wiki/rest/api/user/current");
     if (!me?.accountId) throw new Error("authFailed");
     if (state.me && state.me.accountId !== me.accountId) {
-      state.comments = []; state.pages.clear(); state.users.clear(); state.originals.clear();
+      state.comments = []; state.tasks = []; state.tasksError = null; state.tasksUpdatedAt = null; state.pages.clear(); state.users.clear(); state.originals.clear();
     }
     state.me = me;
     await saveIfCurrent(settings, { syncStatus: { ...scope, state: "syncing", me } });
     const context = client.createCommentLoadContext();
-    const sources = Object.entries(client.commentSources);
+    const sources = [...Object.entries(client.commentSources), ["tasks", { load: () => client.loadTasks() }]];
     const results = await Promise.allSettled(sources.map(([, source]) => source.load(context)));
     const failed = results.filter(result => result.status === "rejected");
     const authError = failed.find(result => result.reason.status === 401);
@@ -112,6 +112,13 @@ async function refreshNow(force) {
     if (throttled) throw throttled.reason;
     if (failed.length === results.length) throw failed[0].reason;
     state.comments = results.flatMap((result, index) => {
+      const sourceKind = sources[index][0];
+      if (sourceKind === "tasks") {
+        if (result.status === "fulfilled") {
+          state.tasks = result.value; state.tasksUpdatedAt = new Date().toISOString(); state.tasksError = null;
+        } else state.tasksError = { message: result.reason.message, status: result.reason.status ?? null };
+        return [];
+      }
       if (result.status === "fulfilled") return result.value;
       const kind = sources[index][0];
       context.warnings.add(`${kind === "inline" ? "Inline" : "Page"}: ${result.reason.message}`);
