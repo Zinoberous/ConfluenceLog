@@ -58,7 +58,7 @@ Each entry shows the page or blog post title, creator, creation time, task text,
 
 Tasks are sorted by due date, earliest first, with undated tasks last. Ties are sorted by creation time, newest first. Due dates retain their calendar date. Today's dates are yellow and overdue dates are red. Search filters task text and page title.
 
-Tasks share the existing popup-driven synchronization loop and local cache. Closing the popup lets the current pass finish, then pauses the loop. Task search and scroll position are retained separately from the comments page. Failed task refreshes keep the previous task list and show a page-specific error with its last successful timestamp. Task completion and editing remain in Confluence.
+Tasks share the background synchronization loop and local cache. Task search and scroll position are retained separately from the comments page. Failed task refreshes keep the previous task list and show a page-specific error with its last successful timestamp. Task completion and editing remain in Confluence.
 
 Notifications are not implemented: no private or undocumented notifications endpoints will be used. A supported public API is a prerequisite for any future notifications integration.
 
@@ -68,7 +68,7 @@ Uses the [Confluence Cloud comment REST API v2](https://developer.atlassian.com/
 
 Results are limited to content accessible to the signed-in account. Connection messages appear in Settings and loading stays inside the relevant list. Large tenants may take longer to load. Mention detection uses explicit ADF account IDs or storage-format mention attributes.
 
-A background service worker starts a new synchronization immediately after the previous pass finishes while the popup is open. When it closes, the current pass finishes and saves its cache, then the loop pauses. Reopening shows cached entries immediately and starts or joins a synchronization. Passes do not overlap. A 30-second recovery alarm resumes the loop after worker suspension while a popup is open. The icon next to the update timestamp rotates continuously. Offline errors retain the last successful snapshot. HTTP 401 invalidates it.
+A background service worker starts a new synchronization after the previous pass finishes, even with the popup closed. A 30-second recovery alarm resumes the loop after worker suspension. The toolbar badge counts open relevant comment threads and assigned open tasks. Offline errors retain the last successful snapshot. HTTP 401 invalidates it.
 
 Refreshes enumerate open and resolved comments to discover new replies, deletions and resolution changes. Original-author lookups are reused across refreshes, and page and user metadata is refreshed at most hourly. If one comment collection fails, its last successful cached conversations are retained. Cache writes are scoped to the configured host and account and rejected if credentials change during a request.
 

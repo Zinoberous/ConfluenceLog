@@ -7,8 +7,6 @@ const store = chrome.storage.local;
 let queue = Promise.resolve();
 let refreshJob = null;
 let continuationTimer;
-let popupActive = false;
-const popupPorts = new Set();
 
 function enqueue(operation) {
   const job = queue.then(operation);
@@ -19,19 +17,25 @@ function credentialsEqual(a, b) {
   return a?.host === b?.host && a?.email === b?.email && a?.token === b?.token;
 }
 function configured(settings) { return Boolean(settings?.host && settings.email && settings.token); }
-async function hasOpenPopup() {
-  const contexts = await chrome.runtime.getContexts({ contextTypes: ["POPUP"] });
-  return contexts.some(context => context.documentUrl === chrome.runtime.getURL("popup.html"));
+function countOpenItems(state, client) {
+  const tasks = state.tasks.filter(task => task.body ? client.bodyText(task.body, task.assignedTo) : task.text?.trim());
+  return tasks.length + state.comments.filter(item => item.open && (item.mine || item.watched)).length;
 }
-function pauseLoop() {
-  popupActive = false;
-  clearTimeout(continuationTimer);
-  chrome.alarms.clear(ALARM_NAME).catch(console.error);
+async function updateBadge() {
+  const { settings, commentCache } = await store.get(["settings", "commentCache"]);
+  let count = 0;
+  if (configured(settings) && matchesConfluenceCache(commentCache, settings)) {
+    count = commentCache.openCount;
+    if (count === undefined) {
+      const { state, client } = newClient(settings, commentCache);
+      count = countOpenItems(state, client);
+    }
+  }
+  await chrome.action.setBadgeText({ text: count > 999 ? "999+" : count ? String(count) : "" });
 }
 async function ensureAlarm() {
   const { settings } = await store.get("settings");
-  popupActive = await hasOpenPopup();
-  if (!configured(settings) || !popupActive) { await chrome.alarms.clear(ALARM_NAME); return; }
+  if (!configured(settings)) { await chrome.alarms.clear(ALARM_NAME); return; }
   const alarm = await chrome.alarms.get(ALARM_NAME);
   if (!alarm || alarm.periodInMinutes !== REFRESH_MINUTES) {
     await chrome.alarms.create(ALARM_NAME, { delayInMinutes: REFRESH_MINUTES, periodInMinutes: REFRESH_MINUTES });
@@ -39,16 +43,13 @@ async function ensureAlarm() {
 }
 function armLoop(delay = 0) {
   clearTimeout(continuationTimer);
-  if (!popupActive) return;
   continuationTimer = setTimeout(() => resumeLoop().catch(console.error), Math.max(0, delay));
 }
 async function resumeLoop() {
-  popupActive = await hasOpenPopup();
-  if (!popupActive) { pauseLoop(); return; }
   const { settings, syncControl } = await store.get(["settings", "syncControl"]);
   if (!configured(settings) || syncControl?.blocked) return;
   if (syncControl?.nextAllowedAt > Date.now()) { armLoop(syncControl.nextAllowedAt - Date.now()); return; }
-  if (await hasOpenPopup()) await refresh(true).catch(() => {});
+  await refresh(true).catch(() => {});
 }
 async function scheduleContinuation(error) {
   if (error?.message === "settingsChanged") { armLoop(); return; }
@@ -127,6 +128,7 @@ async function refreshNow(force) {
       .sort((a, b) => new Date(b.updatedAt ?? 0) - new Date(a.updatedAt ?? 0));
     state.lastUpdated = new Date();
     const cache = client.snapshot([...context.warnings]);
+    cache.openCount = countOpenItems(state, client);
     if (failed.length) cache.incomplete = true;
     await saveIfCurrent(settings, { commentCache: cache, syncStatus: { ...scope, state: "idle" } });
     return cache;
@@ -154,11 +156,6 @@ function refresh(force = false) {
 }
 chrome.runtime.onConnect.addListener(port => {
   if (port.name !== "confluence-popup" || port.sender?.id !== chrome.runtime.id || port.sender?.url !== chrome.runtime.getURL("popup.html")) return;
-  popupPorts.add(port); popupActive = true;
-  port.onDisconnect.addListener(() => {
-    popupPorts.delete(port);
-    if (!popupPorts.size) pauseLoop();
-  });
   return ensureAlarm().then(() => { if (!refreshJob) armLoop(); }).catch(console.error);
 });
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -174,7 +171,9 @@ chrome.alarms.onAlarm.addListener(alarm => {
 chrome.runtime.onInstalled.addListener(() => { ensureAlarm().catch(console.error); });
 chrome.runtime.onStartup.addListener(() => { ensureAlarm().then(() => armLoop()).catch(() => {}); });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes.settings) return;
+  if (area !== "local") return;
+  if (changes.settings || changes.commentCache) updateBadge().catch(console.error);
+  if (!changes.settings) return;
   ensureAlarm().catch(console.error);
   if (!credentialsEqual(changes.settings.oldValue, changes.settings.newValue)) {
     // The account cache is never reused across credential changes.
@@ -183,6 +182,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 // The timer chains completed passes; the 30-second alarm resumes after worker suspension.
 ensureAlarm().then(() => armLoop()).catch(console.error);
+updateBadge().catch(console.error);
 chrome.permissions.onAdded?.addListener(() => {
   store.remove("syncControl").then(() => armLoop()).catch(console.error);
 });

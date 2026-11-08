@@ -15,9 +15,9 @@
         <div><div class="brand-title">ConfluenceLog</div><div id="connectionState" class="brand-subtitle">Nicht verbunden</div></div>
       </div>
       <nav class="tabs" aria-label="Navigation">
-        <button class="tab active" data-page="comments" title="Kommentare" aria-label="Kommentare">☷</button>
+        <button class="tab" data-page="comments" title="Kommentare" aria-label="Kommentare">☷</button>
         <button class="tab" data-page="tasks" title="Aufgaben" aria-label="Aufgaben" data-i18n-title="tasks"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true"><use href="#mi-tasks" /></svg></button>
-        <button class="tab" data-page="settings" title="Einstellungen" aria-label="Einstellungen"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">
+        <button class="tab active" data-page="settings" title="Einstellungen" aria-label="Einstellungen"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">
           <use href="#mi-settings" />
         </svg></button>
         <button id="tabInfo" class="tab" data-page="info" title="Info" aria-label="Info"><svg class="mi" viewBox="0 0 24 24" aria-hidden="true">
@@ -27,7 +27,7 @@
     </header>
 
     <main>
-      <section id="pageComments" class="page active">
+      <section id="pageComments" class="page">
         <div class="toolbar">
           <div class="summary"><strong id="openCount">–</strong><span data-i18n="openComments">Offene Kommentare</span></div>
         </div>
@@ -66,7 +66,7 @@
         <div class="list-footer"><span id="taskResultCount"></span><span class="updated-status"><span id="tasksLastUpdated"></span><span id="taskSyncIndicator" class="sync-indicator" aria-hidden="true">↻</span></span></div>
       </section>
 
-      <section id="pageSettings" class="page">
+      <section id="pageSettings" class="page active">
         <div class="notice-wrap">
           <div id="settingsNotice" class="notice hidden" role="status"></div>
           <button type="button" class="notice-close" data-dismiss="settingsNotice" data-i18n-title="dismissNotice" aria-label="Dismiss message">×</button>

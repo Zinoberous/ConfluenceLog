@@ -20,6 +20,7 @@ function worker(initial = {settings}, route = () => undefined, popupOpen = true)
   };
   const chrome = {storage:{local:store,onChanged:changed}, permissions:{contains:async () => true},
     alarms:{get:async name => alarms.get(name), create:async (name, options) => alarms.set(name, options),clear:async name => alarms.delete(name),onAlarm:event()},
+    action:{setBadgeText:async ({text}) => { chrome.action.badge = text; }},
     runtime:{getContexts:async () => popupOpen ? [{documentUrl:'chrome-extension://test/popup.html'}] : [],onConnect:event(),id:'test',getURL:path => `chrome-extension://test/${path}`,onMessage:event(),onStartup:event(),onInstalled:event()}
   };
   let context;
@@ -186,7 +187,7 @@ test('offline failures back off and authentication failures stop automatic retri
   assert.equal(denied.calls.length,count);
 });
 
-test('closing the popup finishes the current sync but starts no further pass', async () => {
+test('closing the popup leaves background sync and the badge active', async () => {
   let release;
   const gate=new Promise(resolve=>{release=resolve;});
   const a=worker(undefined,async url=>{if(url.pathname==='/wiki/api/v2/inline-comments')await gate;});
@@ -197,10 +198,11 @@ test('closing the popup finishes the current sync but starts no further pass', a
   release();
   const result=await request;
   assert.equal(result.ok,true); assert.equal(a.data.commentCache.threads.length,1);
-  assert.equal(a.timers.size,0); assert.equal(a.alarms.size,0);
+  assert.equal(a.timers.size,1); assert.equal(a.alarms.size,1);
+  assert.equal(a.chrome.action.badge,'1');
   const count=a.calls.length;
   await a.run('resumeLoop()');
-  assert.equal(a.calls.length,count);
+  assert.ok(a.calls.length>count);
 });
 test('reopening starts immediately and joins a still-running sync', async () => {
   let release, blocking=false;
@@ -219,12 +221,11 @@ test('reopening starts immediately and joins a still-running sync', async () => 
   assert.equal(a.calls.filter(call=>call.url.endsWith('/user/current')).length,2);
   assert.ok(a.calls.length>count);
 });
-test('worker restart with no popup creates no loop and makes no API requests', async () => {
+test('worker restart resumes sync without a popup', async () => {
   const a=worker(undefined,undefined,false);
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(a.timers.size,0); assert.equal(a.alarms.size,0);
-  await a.run('resumeLoop()'); assert.equal(a.calls.length,0);
-  await a.openPopup();
+  assert.equal(a.timers.size,1); assert.equal(a.alarms.size,1);
+  await a.run('resumeLoop()'); assert.ok(a.calls.length>0);
   assert.equal([...a.timers.values()][0].delay,0);
 });
 test('task synchronization shares the cache and retains last successful tasks on API failure', async () => {
@@ -232,6 +233,7 @@ test('task synchronization shares the cache and retains last successful tasks on
   const a=worker(undefined,url=>url.pathname==='/wiki/api/v2/tasks'? failed?{status:403}:{data:{results:completed?[]:[{id:'task1',status:'incomplete',assignedTo:'me',dueAt:'2026-11-06T00:00:00Z',body:root().body}]}}:undefined);
   await a.send({action:'refresh',force:true});
   assert.equal(a.data.commentCache.tasks.length,1);
+  assert.equal(a.chrome.action.badge,'2');
   const lastUpdated=a.data.commentCache.tasksUpdatedAt;
   failed=true;
   const response=await a.send({action:'refresh',force:true});
@@ -242,6 +244,7 @@ test('task synchronization shares the cache and retains last successful tasks on
   failed=false;completed=true;a.data.syncControl.nextAllowedAt=0;
   await a.send({action:'refresh',force:true});
   assert.equal(a.data.commentCache.tasks.length,0);assert.equal(a.data.commentCache.tasksError,null);
+  assert.equal(a.chrome.action.badge,'1');
 });
 test('tasks can synchronize when both comment collections are unavailable', async () => {
   const a=worker(undefined,url=>{

@@ -2,7 +2,7 @@ const storage = chrome.storage.local;
 const defaults = { settings: { host: "", email: "", token: "", themeMode: "system", languageMode: "system" } };
 const state = {
   settings: { ...defaults.settings }, me: null, comments: [], pages: new Map(), activeTab: "mine", kind: "all", expanded: new Set(), users: new Map(),
-  query: "", taskQuery: "", taskScrollTop: 0, syncError: null, activePage: "comments", scrollTop: 0, restoringScroll: false, scrollRestoreVersion: 0, loading: false, hasCache: false, cacheRevision: 0, pendingCache: null, lastUpdated: null, pageNavigationVersion: 0
+  query: "", taskQuery: "", taskScrollTop: 0, syncError: null, activePage: "settings", scrollTop: 0, restoringScroll: false, scrollRestoreVersion: 0, loading: false, hasCache: false, cacheRevision: 0, pendingCache: null, lastUpdated: null, pageNavigationVersion: 0
 };
 const $ = (id) => document.getElementById(id);
 
@@ -128,7 +128,6 @@ function applySyncStatus(status) {
   if (!status || status.host !== state.settings.host || status.email !== state.settings.email) return;
   if (status.me?.accountId && !state.me) {
     state.me = status.me; updateConnectionState(true);
-    if (state.pageNavigationVersion === 0) activatePage("comments");
     render();
   }
   for (const id of ["syncIndicator", "taskSyncIndicator"]) $(id).title = t(status.state === "syncing" ? "backgroundRefresh" : "updated");
@@ -280,7 +279,6 @@ function render() {
 }
 async function saveSettings(event) {
   event.preventDefault();
-  const pageNavigationVersion = state.pageNavigationVersion;
   try {
     const host = normalizeHost($("host").value);
     const origin = originOf(host);
@@ -304,7 +302,6 @@ async function saveSettings(event) {
       if (chrome.storage.session) await chrome.storage.session.remove("commentView");
       await storage.set({ settings: state.settings });
       updateConnectionState(true); applyLanguage(); showNotice(t("loginOk"), "success");
-      if (state.pageNavigationVersion === pageNavigationVersion) activatePage("comments");
       await loadComments();
     } catch (error) {
       state.settings = previousSettings;
