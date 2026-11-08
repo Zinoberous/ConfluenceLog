@@ -19,6 +19,8 @@ body.logged-out #pageComments{display:none!important}
 .settings-card h2{margin:0 0 2px;font-size:1.5em;font-weight:700}
 .settings-card label{display:grid;gap:5px;color:var(--muted);font-size:14px}
 .settings-card label>span{font-weight:700;color:var(--text)}
+.token-field{display:grid;gap:5px}
+.token-link{width:fit-content;color:var(--accent);font-weight:700}
 .settings-card input,.settings-card select{width:100%;min-height:unset;padding:7px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:14px;outline:none}
 .settings-card input:focus,.settings-card select:focus{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
 .host-input{display:flex;align-items:center;gap:0;min-width:0;min-height:36px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--muted);font-size:14px;font-weight:400}
@@ -110,3 +112,8 @@ body.logged-out .tab[data-page="tasks"],body.logged-out #pageTasks{display:none!
 .task-due.due-today{color:#f5cf60;border-color:#a7872b;background:rgba(230,184,40,.12)}
 .task-due.overdue{color:var(--danger);border-color:var(--danger);background:rgba(220,55,55,.12)}
 :root[data-theme^="light"] .task-due.due-today{color:#805f00;border-color:#aa8100;background:#fff3c4}
+.notice-wrap { position: relative; }
+.notice-wrap > .notice { padding-inline-end: 40px; overflow-wrap: anywhere; }
+.notice-close { position: absolute; inset-block-start: 4px; inset-inline-end: 5px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: inherit; font-size: 19px; line-height: 1; }
+.notice-close:hover { background: var(--surface-2); }
+.notice.hidden + .notice-close, .notice[hidden] + .notice-close { display: none; }

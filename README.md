@@ -24,9 +24,9 @@ A Microsoft Edge / Chromium extension that provides a personal overview for Conf
 5. Open the extension, select Settings and enter your Confluence Cloud host, Atlassian email and API token.
 6. Enter your credentials and select **Connect and save**. Approve the requested host permission when Edge asks for it.
 
-When disconnected, only the login form is shown. After a successful login, the comment overview and settings become available. Credentials are revalidated during synchronization; reopening a fresh cache does not trigger another API scan.
+When disconnected, the popup opens Settings. Once connected, Comments and Tasks become available. The popup restores the last selected page when reopening within the same browser session.
 
-Enter only your Atlassian company name in the host field (for example, `example` for `https://example.atlassian.net`).
+Enter only the subdomain in the Host field (for example, `example` for `https://example.atlassian.net`).
 
 ## API token
 
@@ -34,7 +34,7 @@ Create an Atlassian API token in your Atlassian account security settings. The e
 
 ## Permissions and data handling
 
-- `storage`: saves credentials, cached comments and metadata locally; session storage retains filters, expanded conversations and the comment-page scroll position.
+- `storage`: saves credentials, cached comments, tasks and metadata locally. Session storage retains the selected page, filters, expanded conversations and separate scroll positions for Comments and Tasks.
 - `alarms`: resumes background synchronization if the browser suspends the worker.
 - Optional host permission: requested only for the configured Confluence origin.
 - The API token is stored in `chrome.storage.local` in the browser profile. This is local storage, **not encrypted secret storage**. Anyone with access to the same browser profile may potentially access it. Do not use this extension on a shared/untrusted browser profile.
@@ -46,6 +46,7 @@ Create an Atlassian API token in your Atlassian account security settings. The e
 The popup shows threads containing your own comments or explicit mentions of your account, including replies. Filter by My comments (threads you started), Involved (threads you replied to or were mentioned in), or Done; search across page titles and the entire conversation. Both inline and page/footer comments are included. Filter by All types, Inline or Page. My comments is the default view; the Done view shows resolved conversations. Both statuses are fully loaded and cached, including reply history and metadata.
 
 - Entries show the complete original comment, labels and a direct Confluence link.
+- Done shows resolved conversations, newest resolution first. Entries without a resolution timestamp come last, ordered by activity. When available, the entry shows when it was resolved and who resolved it if that person differs from the original author.
 - When replies exist, expand Replies to read them without repeating the original comment. Filters and expanded conversations survive popup closure within the same browser session.
 - The extension is read-only: replying and resolving are performed in Confluence. No comment POST, PUT or DELETE requests are exposed by the popup or background worker.
 
@@ -53,7 +54,9 @@ The popup shows threads containing your own comments or explicit mentions of you
 
 The Tasks navigation item shows open tasks assigned to the connected account. Tasks are fetched through the public [Confluence Cloud task API v2](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-task/) using `status=incomplete`, `assigned-to=<accountId>`, `limit=250` and cursor pagination. Both filters are also checked locally.
 
-Each entry shows its text, the containing page or blog post, an optional due date and a link to Confluence. The nearest due date comes first, including overdue tasks; entries without a due date come last. Due dates retain their calendar date rather than shifting with the browser timezone. Search filters task text and page title.
+Each entry shows the page or blog post title, creator, creation time, task text, optional due date and a link to Confluence. The assignee mention is removed from the displayed text. Tasks with no text left after trimming whitespace are omitted.
+
+Tasks are sorted by due date, earliest first, with undated tasks last. Ties are sorted by creation time, newest first. Due dates retain their calendar date. Today's dates are yellow and overdue dates are red. Search filters task text and page title.
 
 Tasks share the existing popup-driven synchronization loop and local cache. Closing the popup lets the current pass finish, then pauses the loop. Task search and scroll position are retained separately from the comments page. Failed task refreshes keep the previous task list and show a page-specific error with its last successful timestamp. Task completion and editing remain in Confluence.
 
@@ -63,11 +66,13 @@ Notifications are not implemented: no private or undocumented notifications endp
 
 Uses the [Confluence Cloud comment REST API v2](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-comment/), with paginated global inline and footer comment collections and parent reconstruction. If a global collection returns HTTP 404, the extension falls back to paginated page comment collections and recursively loads replies. Original authors of edited comments are retrieved from version 1, with a content-history fallback if the old version is unavailable. Page metadata is loaded for relevant threads only. Collection requests use `limit=250` to reduce pagination calls; cursor links returned by Confluence are followed unchanged. Requests use at most five concurrent workers per collection.
 
-Results are limited to content accessible to the signed-in account. An API failure is displayed with its API path on the comment page; previously loaded results remain available. Inaccessible individual comments or authors produce an incomplete-results notice. Connection messages stay on the settings page; loading stays inside the comment list. Large tenants may take longer to load. Mention detection uses explicit ADF account IDs or storage-format mention attributes, rather than matching names in text.
+Results are limited to content accessible to the signed-in account. Connection messages appear in Settings and loading stays inside the relevant list. Large tenants may take longer to load. Mention detection uses explicit ADF account IDs or storage-format mention attributes.
 
-A background service worker starts a new synchronization immediately after the previous pass finishes, while the popup is open. When it closes, the current pass finishes and saves its cache, then the loop pauses. Reopening immediately starts a new pass or joins one still in progress. Passes do not overlap. A 30-second recovery alarm resumes the loop after worker suspension only if a popup is still open; the alarm and timer are removed when the popup closes. Browser sleep or shutdown may delay updates. The popup immediately shows the last saved comments and their update timestamp; opening it shows cached entries immediately and starts or joins a synchronization. Synchronization is automatic while the popup is open; there is no manual reload button. A small rotating indicator beside Updated shows an active pass; rate-limit delays still apply. Offline errors retain the last successful snapshot; HTTP 401 invalidates it.
+A background service worker starts a new synchronization immediately after the previous pass finishes while the popup is open. When it closes, the current pass finishes and saves its cache, then the loop pauses. Reopening shows cached entries immediately and starts or joins a synchronization. Passes do not overlap. A 30-second recovery alarm resumes the loop after worker suspension while a popup is open. The icon next to the update timestamp rotates continuously. Offline errors retain the last successful snapshot. HTTP 401 invalidates it.
 
-Refreshes still enumerate the current open comment collections to discover new replies, deletions and resolution changes; there is no reliable delta feed. Original-author lookups are reused across refreshes, and page/user metadata is refreshed at most hourly. Overlapping refresh requests are deduplicated. If one comment collection fails, its last successful cached conversations are retained with an incomplete-results note. Cache writes are scoped to the configured host and account and rejected if credentials change during a request. Cached comment text remains in local browser storage.
+Refreshes enumerate open and resolved comments to discover new replies, deletions and resolution changes. Original-author lookups are reused across refreshes, and page and user metadata is refreshed at most hourly. If one comment collection fails, its last successful cached conversations are retained. Cache writes are scoped to the configured host and account and rejected if credentials change during a request.
+
+Failures trigger exponential backoff from 30 seconds up to five minutes. The worker honors longer `Retry-After` delays for HTTP 429 and 503, including after a worker restart. Authentication or permission failures pause automatic updates until credentials or host permissions change.
 
 ## Development
 
@@ -85,10 +90,3 @@ MIT. See [LICENSE](LICENSE).
 
 Created by Alexander Karge. The project follows the structure and UI conventions of JiraLog.
 
-Initial loading and background refresh include both open and resolved conversations. The page fallback requests open/reopened/resolved/dangling inline roots and traverses replies for all statuses. Switching to Done uses the same cache and does not trigger another scan. The open count always excludes resolved conversations.
-
-Done is sorted by `resolutionLastModifiedAt` or `resolutionLastModifiedTime`, newest first. Entries without a valid resolution timestamp come last, ordered by conversation activity. The resolution timestamp is also shown on resolved entries when available.
-
-Resolved entries show the person identified by `resolutionLastModifierId` when supplied by Confluence. Their display name is resolved through the same cached user lookup used for comment authors; if unavailable, the account ID is shown.
-
-The continuous loop pauses on failures with exponential backoff (30 seconds up to 5 minutes), and honors longer `Retry-After` delays for HTTP 429/503. The retry deadline survives worker restart. Authentication/permission failures pause automatic updates until credentials or host permissions change. This polling mode increases API traffic compared to a fixed five-minute interval.

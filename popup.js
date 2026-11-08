@@ -13,7 +13,9 @@ const i18n = {
     search: "Kommentare und Seiten suchen …", noResults: "Keine passenden Kommentare gefunden.", configure: "Bitte zuerst deine Confluence-Zugangsdaten hinterlegen.",
     loading: "Lade Kommentare …", refresh: "Aktualisieren", confluenceAccess: "Zugang", connect: "Zugang speichern",
     reportIssue: "Ein Problem melden", createdBy: "Erstellt von Alexander Karge", allRightsReserved: "Alle Rechte vorbehalten",
-    preferences: "Darstellung und Sprache", theme: "Theme", language: "Sprache", hostLabel: "Atlassian-Unternehmen",
+    preferences: "Darstellung und Sprache", theme: "Theme", language: "Sprache", hostLabel: "Host",
+    tokenLabel: "API-Token",
+    dismissNotice: "Meldung schließen",
     system: "System", dark: "Dunkel", light: "Hell", german: "Deutsch", english: "English",
     infoText: "Persönliche Übersicht für Confluence.",
     loginOk: "Verbindung erfolgreich.", loginFailed: "Verbindung fehlgeschlagen.", permissionDenied: "Kein Zugriff auf den angegebenen Host. Bitte Berechtigung erteilen.",
@@ -28,7 +30,9 @@ const i18n = {
     noResults: "No matching comments found.", configure: "Please configure your Confluence credentials first.", loading: "Loading comments …",
     refresh: "Refresh", confluenceAccess: "Access", connect: "Save Access",
     reportIssue: "Report an issue", createdBy: "Created by Alexander Karge", allRightsReserved: "All rights reserved", preferences: "Preferences", theme: "Theme", language: "Language",
-    hostLabel: "Atlassian company", system: "System", dark: "Dark", light: "Light", german: "Deutsch", english: "English",
+    hostLabel: "Host", system: "System", dark: "Dark", light: "Light", german: "Deutsch", english: "English",
+    tokenLabel: "API token",
+    dismissNotice: "Dismiss message",
     infoText: "Personal overview for Confluence.", loginOk: "Connection successful.", loginFailed: "Connection failed.",
     permissionDenied: "No access to the configured host. Please grant the permission.", authFailed: "Authentication failed. Check host, email and API token.",
     noAccess: "No comments found or no permission to read comments.", ownComment: "By you", mentioned: "You were mentioned",
@@ -50,7 +54,7 @@ function applyLanguage() {
 function normalizeHost(value) {
   const tenant = value.trim();
   if (tenant.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(tenant)) {
-    throw new Error("Bitte nur den Atlassian-Unternehmensnamen angeben (z. B. your-company).");
+    throw new Error("Bitte nur die Subdomain angeben (z. B. your-company).");
   }
   return `https://${tenant.toLowerCase()}.atlassian.net`;
 }
@@ -135,7 +139,16 @@ function applySyncStatus(status) {
     else if (state.hasCache) showNotice(`${t("cachedRefreshFailed")} (${t(status.message)})`, "error", "comments");
   } else if (status.state === "idle") hideNotice();
 }
-function showNotice(message, type = "info", page = "settings") { const el = $(page === "comments" ? "notice" : "settingsNotice"); el.textContent = message; el.className = `notice ${type}`; }
+const dismissedNotices = new Map();
+function setNotice(id, message, type) {
+  const el = $(id);
+  if (dismissedNotices.get(id) !== message) dismissedNotices.delete(id);
+  el.textContent = message;
+  el.className = message && !dismissedNotices.has(id) ? `notice ${type}` : "notice hidden";
+}
+function showNotice(message, type = "info", page = "settings") {
+  setNotice(page === "comments" ? "notice" : "settingsNotice", message, type);
+}
 function hideNotice() { $("notice").className = "notice hidden"; }
 function showEmpty(message) { $("commentList").replaceChildren(); const el = document.createElement("div"); el.className = "empty"; el.textContent = message; $("commentList").append(el); }
 function updateConnectionState(connected = Boolean(state.me)) {
@@ -167,8 +180,7 @@ function renderTasks() {
   $("taskResultCount").textContent = `${filtered.length} ${t("resultCount")}`;
   $("tasksLastUpdated").textContent = state.tasksUpdatedAt ? `${t("updated")}: ${dateValue(state.tasksUpdatedAt, true)}` : "";
   const error = state.tasksError?.message ?? state.syncError;
-  $("taskNotice").className = error ? "notice error" : "notice hidden";
-  $("taskNotice").textContent = error ? `${t("tasksFailed")} (${t(error)})` : "";
+  setNotice("taskNotice", error ? `${t("tasksFailed")} (${t(error)})` : "", "error");
   list.setAttribute("aria-busy", String(state.loading)); list.replaceChildren();
   if (state.loading && !state.tasksUpdatedAt) {
     const loading = make("div", "empty loading-state"); const spinner = make("span", "spinner"); spinner.setAttribute("aria-hidden", "true");
@@ -407,6 +419,13 @@ function connectPopup() {
   });
 }
 async function init() {
+  document.querySelectorAll("[data-dismiss]").forEach(button => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.dismiss;
+      dismissedNotices.set(id, $(id).textContent);
+      $(id).className = "notice hidden";
+    });
+  });
   const stored = await storage.get(["settings", "commentCache", "syncStatus"]); state.settings = { ...defaults.settings, ...(stored.settings ?? {}) };
   $("host").value = hostTenant(state.settings.host); $("email").value = state.settings.email; $("token").value = state.settings.token;
   $("themeMode").value = state.settings.themeMode; $("languageMode").value = state.settings.languageMode;
