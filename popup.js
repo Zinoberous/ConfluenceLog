@@ -302,7 +302,8 @@ async function saveSettings(event) {
       if (chrome.storage.session) await chrome.storage.session.remove("commentView");
       await storage.set({ settings: state.settings });
       updateConnectionState(true); applyLanguage(); showNotice(t("loginOk"), "success");
-      await loadComments();
+      const cache = await workerRequest("reconnect");
+      applyCommentCache(cache);
     } catch (error) {
       state.settings = previousSettings;
       state.me = null;

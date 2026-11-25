@@ -59,6 +59,18 @@ function worker(initial = {settings}, route = () => undefined, popupOpen = true)
   return {data,calls,alarms,chrome,timers,openPopup,closePopup,run:code => vm.runInContext(code,context),
     send:message => new Promise(resolve => chrome.runtime.onMessage.listeners[0]({type:'confluence',...message},{id:'test',url:'chrome-extension://test/popup.html'},resolve))};
 }
+test('reconnecting with unchanged credentials clears a persisted authentication block', async () => {
+  const a = worker({ settings, syncControl: { blocked: true, nextAllowedAt: Date.now() + 60000 } });
+  const blocked = await a.send({action:'refresh',force:true});
+  assert.equal(blocked.ok,false);
+  assert.equal(a.calls.length,0);
+  const result = await a.send({action:'reconnect'});
+  assert.equal(result.ok,true);
+  assert.equal(a.data.syncControl.blocked,false);
+  assert.ok(a.data.commentCache.me.accountId);
+  assert.ok(a.calls.some(call=>call.url.endsWith('/user/current')));
+});
+
 test('background creates a recovery alarm and persists credential-free data across restarts', async () => {
   const a = worker();
   const response = await a.send({action:'refresh',force:true});

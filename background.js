@@ -154,13 +154,29 @@ function refresh(force = false) {
   job.finally(() => { if (refreshJob === job) refreshJob = null; }).catch(() => {});
   return job;
 }
+function reconnect() {
+  // Serialize the reset after any in-flight pass so it cannot restore the old block.
+  return enqueue(async () => {
+    clearTimeout(continuationTimer);
+    await store.remove(["syncControl", "syncStatus"]);
+    try {
+      const cache = await refreshNow(true);
+      await scheduleContinuation(cache.incomplete ? new Error("partialResults") : null);
+      return cache;
+    } catch (error) {
+      await scheduleContinuation(error);
+      throw error;
+    }
+  });
+}
 chrome.runtime.onConnect.addListener(port => {
   if (port.name !== "confluence-popup" || port.sender?.id !== chrome.runtime.id || port.sender?.url !== chrome.runtime.getURL("popup.html")) return;
   return ensureAlarm().then(() => { if (!refreshJob) armLoop(); }).catch(console.error);
 });
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL("")) || message?.type !== "confluence") return false;
-  const job = message.action === "refresh" ? refresh(Boolean(message.force))
+  const job = message.action === "reconnect" ? reconnect()
+    : message.action === "refresh" ? refresh(Boolean(message.force))
     : Promise.reject(new Error("readOnly"));
   job.then(value => sendResponse({ ok: true, value }), error => sendResponse({ ok: false, error: { message: error.message, status: error.status } }));
   return true;
