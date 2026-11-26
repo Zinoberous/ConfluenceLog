@@ -85,11 +85,12 @@ function flushPendingCache() {
   }
 }
 function persistView() {
-  if (!state.me || !chrome.storage.session) return;
-  chrome.storage.session.set({ commentView: {
+  if (!state.me) return;
+  const view = { commentView: {
     host: state.settings.host, email: state.settings.email, accountId: state.me.accountId,
     activePage: state.activePage, activeTab: state.activeTab, kind: state.kind, query: state.query, taskQuery: state.taskQuery, taskScrollTop: state.taskScrollTop, scrollTop: state.scrollTop, expanded: [...state.expanded]
-  } }).catch(console.error);
+  } };
+  storage.set(view).catch(console.error);
 }
 function rememberScroll() {
   if (typeof window === "undefined" || !["comments", "tasks"].includes(state.activePage) || state.restoringScroll) return;
@@ -165,7 +166,7 @@ function commentGroups() {
     if (!item.open) groups.done.push(item);
     else {
       if (item.mine) groups.mine.push(item);
-      if (item.watched) groups.watched.push(item);
+      if (!item.mine && item.watched) groups.watched.push(item);
     }
   }
   return groups;
@@ -299,6 +300,7 @@ async function saveSettings(event) {
       state.comments = []; state.tasks = []; state.tasksUpdatedAt = null; state.tasksError = null; state.syncError = null; state.taskQuery = ""; state.taskScrollTop = 0; state.pages.clear(); state.users.clear(); state.originals.clear(); state.expanded.clear();
       state.hasCache = false; state.cacheRevision = 0; state.pendingCache = null; state.scrollTop = 0;
       await storage.remove(["commentCache", "syncStatus"]);
+      await storage.remove("commentView");
       if (chrome.storage.session) await chrome.storage.session.remove("commentView");
       await storage.set({ settings: state.settings });
       updateConnectionState(true); applyLanguage(); showNotice(t("loginOk"), "success");
@@ -467,10 +469,12 @@ async function init() {
     const permitted = await chrome.permissions.contains({ origins: [`${originOf(state.settings.host)}/*`] });
     if (!permitted) { showNotice(t("permissionDenied"), "error"); return; }
     const restored = applyCommentCache(stored.commentCache);
-    if (restored && chrome.storage.session) {
-      const { commentView: view } = await chrome.storage.session.get("commentView");
+    if (restored) {
+      const savedView = (await storage.get("commentView")).commentView;
+      const view = savedView ?? (chrome.storage.session ? (await chrome.storage.session.get("commentView")).commentView : null);
       if (view?.host === state.settings.host && view.email === state.settings.email && view.accountId === state.me.accountId) {
-        if (state.pageNavigationVersion === 0 && ["comments", "tasks", "settings", "info"].includes(view.activePage)) state.activePage = view.activePage;
+        const restoredPage = state.pageNavigationVersion === 0 &&
+          ["comments", "tasks", "settings", "info"].includes(view.activePage) ? view.activePage : state.activePage;
         state.activeTab = ["mine", "watched", "done"].includes(view.activeTab) ? view.activeTab : "mine";
         state.query = view.query ?? ""; state.kind = ["all", "inline", "footer"].includes(view.kind) ? view.kind : "all"; state.expanded = new Set((view.expanded ?? []).filter(key => key.endsWith("|conversation")));
         state.scrollTop = view.activeTab !== "all" && Number.isFinite(view.scrollTop) ? Math.max(0, view.scrollTop) : 0;
@@ -480,6 +484,7 @@ async function init() {
         $("searchInput").value = state.query;
         document.querySelectorAll(".filter-tab").forEach(el => el.classList.toggle("active", el.dataset.filter === state.activeTab));
         render();
+        activatePage(restoredPage);
       }
     }
     if (restored) { activatePage(state.activePage); applySyncStatus(stored.syncStatus); }

@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 function app() {
   const calls = [];
-  const context = vm.createContext({ chrome: { storage: { local: {} } }, navigator: { language: 'de' }, URL, Intl, console, btoa, AbortSignal,
+  const context = vm.createContext({ chrome: { storage: { local: { set: async () => {} } } }, navigator: { language: 'de' }, URL, Intl, console, btoa, AbortSignal,
     fetch: async (url, options) => { calls.push({url, options}); return { ok: true, json: async () => ({ id: '1', version: { number: 3 }, body: { atlas_doc_format: { value: '{"type":"doc","content":[]}' } } }) }; }
   });
   vm.runInContext(fs.readFileSync('confluence.js', 'utf8'), context);
@@ -213,6 +213,8 @@ test('My comments contains only own roots; Watching includes own replies and men
   const node = popupDocument(a);
   a.run(`state.comments = buildThreads([
     {id:'own',pageTitle:'Own thread',version:{authorId:'me'},body:{}},
+    {id:'own-reply',parentCommentId:'own',version:{authorId:'me'},body:{}},
+    {id:'own-mention',parentCommentId:'own',version:{authorId:'other'},body:{atlas_doc_format:{value:JSON.stringify({type:'mention',attrs:{id:'me'}})}}},
     {id:'replied',pageTitle:'Replied thread',version:{authorId:'other'},body:{}},
     {id:'reply',parentCommentId:'replied',version:{authorId:'me'},body:{}},
     {id:'mentioned',pageTitle:'Mentioned thread',version:{authorId:'other'},body:{atlas_doc_format:{value:JSON.stringify({type:'mention',attrs:{id:'me'}})}}},
@@ -289,7 +291,7 @@ test('cache restoration is account-scoped and session view retains filters witho
   assert.equal(a.run('applyCommentCache(cached)'),false);
   let saved;
   a.set('saveView', value => {saved=value; return Promise.resolve();});
-  a.run(`chrome.storage.session={set:saveView}; state.activePage='tasks'; state.query='Search'; state.kind='footer'; state.expanded.add('thread|conversation'); persistView();`);
+  a.run(`chrome.storage.local.set=saveView; state.activePage='tasks'; state.query='Search'; state.kind='footer'; state.expanded.add('thread|conversation'); persistView();`);
   assert.equal(saved.commentView.activePage,'tasks');
   assert.equal(saved.commentView.query,'Search');
   assert.equal(saved.commentView.kind,'footer');
@@ -325,7 +327,7 @@ test('scroll position survives reopening, rerenders and clicking a Confluence li
   a.set('window',browser);
   let saved;
   a.set('saveView',value=>{saved=value;return Promise.resolve();});
-  a.run(`chrome.storage.session={set:saveView}; state.comments=buildThreads([{id:'1',pageId:'9',version:{authorId:'me'},body:{}}],'inline');
+  a.run(`chrome.storage.local.set=saveView; state.comments=buildThreads([{id:'1',pageId:'9',version:{authorId:'me'},body:{}}],'inline');
     state.scrollTop=850; state.activePage='settings'; activatePage('comments'); render();`);
   while(frames.length) frames.shift()();
   assert.equal(browser.scrollY,850);

@@ -7,7 +7,7 @@ A Microsoft Edge / Chromium extension that provides a personal overview for Conf
 - Manifest V3 browser extension, based on the JiraLog project structure and visual language
 - Confluence Cloud login using host URL, Atlassian email and API token
 - Host permission is requested only for the configured origin
-- Personal comment categories: **My comments** (threads you started), **Involved** (threads you replied to or were mentioned in)
+- Personal comment categories: **My comments** (threads you started), **Involved** (threads started by someone else that you replied to or were mentioned in)
 - Inline and page comments with Open/Done views based on the returned `resolutionStatus`
 - Search by page title and comment text
 - Dedicated Tasks page for open tasks assigned to the signed-in account, with optional due dates
@@ -24,7 +24,7 @@ A Microsoft Edge / Chromium extension that provides a personal overview for Conf
 5. Open the extension, select Settings and enter your Confluence Cloud host, Atlassian email and API token.
 6. Enter your credentials and select **Connect and save**. Approve the requested host permission when Edge asks for it.
 
-When disconnected, the popup opens Settings. Once connected, Comments and Tasks become available. The popup restores the last selected page when reopening within the same browser session.
+When disconnected, the popup opens Settings. Once connected, Comments and Tasks become available. The popup restores the last selected page across browser restarts.
 
 Enter only the subdomain in the Host field (for example, `example` for `https://example.atlassian.net`).
 
@@ -34,7 +34,7 @@ Create an Atlassian API token in your Atlassian account security settings. The e
 
 ## Permissions and data handling
 
-- `storage`: saves credentials, cached comments, tasks and metadata locally. Session storage retains the selected page, filters, expanded conversations and separate scroll positions for Comments and Tasks.
+- `storage`: saves credentials, cached comments, tasks and metadata locally. Local storage also retains the selected page, filters, expanded conversations and separate scroll positions for Comments and Tasks across browser restarts.
 - `alarms`: resumes background synchronization if the browser suspends the worker.
 - Optional host permission: requested only for the configured Confluence origin.
 - The API token is stored in `chrome.storage.local` in the browser profile. This is local storage, **not encrypted secret storage**. Anyone with access to the same browser profile may potentially access it. Do not use this extension on a shared/untrusted browser profile.
@@ -47,7 +47,7 @@ The popup shows threads containing your own comments or explicit mentions of you
 
 - Entries show the complete original comment, labels and a direct Confluence link.
 - Done shows resolved conversations, newest resolution first. Entries without a resolution timestamp come last, ordered by activity. When available, the entry shows when it was resolved and who resolved it if that person differs from the original author.
-- When replies exist, expand Replies to read them without repeating the original comment. Filters and expanded conversations survive popup closure within the same browser session.
+- When replies exist, expand Replies to read them without repeating the original comment. Filters and expanded conversations survive browser restarts.
 - The extension is read-only: replying and resolving are performed in Confluence. No comment POST, PUT or DELETE requests are exposed by the popup or background worker.
 
 ## Assigned tasks

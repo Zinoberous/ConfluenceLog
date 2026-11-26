@@ -130,7 +130,7 @@ function buildThreads(comments, kind) {
     const mentioned = all.some(c => mentionsAccount(c.body, state.me?.accountId));
     const mine = Boolean(state.me?.accountId) && authorId(root) === state.me.accountId;
     const replied = all.some(c => c !== root && authorId(c) === state.me?.accountId);
-    const watched = replied || mentioned;
+    const watched = !mine && (replied || mentioned);
     const pageId = root.pageId ?? root.blogPostId ?? root.contentId ?? root._links?.webui?.match?.(/pageId=(\d+)/)?.[1] ?? "";
     const page = state.pages.get(String(pageId));
     const resolvedAt = !isOpen(root, kind) ? [root.resolutionLastModifiedAt, root.resolutionLastModifiedTime].find(value => Number.isFinite(Date.parse(value))) ?? null : null;
